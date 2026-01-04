@@ -132,11 +132,15 @@
     }
   };
 
-  async function browsePath(target, opts = { directory: true, key: '' }) {
+  async function browsePath(target, opts = { directory: true, key: '', defaultFile: '' }) {
     try {
       const result = await openDialog({ directory: opts.directory, multiple: false });
       if (typeof result === 'string' && result) {
-        settings = { ...settings, [opts.key]: result };
+        let path = result;
+        if (opts.directory && opts.defaultFile) {
+          path = await safeJoin(result, opts.defaultFile);
+        }
+        settings = { ...settings, [opts.key]: path };
       }
     } catch (e) {
       console.error(e);
@@ -840,7 +844,12 @@
                 variant="secondary"
                 size="sm"
                 class="self-start sm:mt-6"
-                on:click={() => browsePath('database', { directory: false, key: 'dbPath' })}
+                on:click={() =>
+                  browsePath('database', {
+                    directory: true,
+                    key: 'dbPath',
+                    defaultFile: 'pazienti_tavi.db',
+                  })}
               >
                 Sfoglia
               </Button>
@@ -1124,7 +1133,12 @@
             variant="secondary"
             size="sm"
             class="self-start sm:mt-6"
-            on:click={() => browsePath('database', { directory: false, key: 'dbPath' })}
+            on:click={() =>
+              browsePath('database', {
+                directory: true,
+                key: 'dbPath',
+                defaultFile: 'pazienti_tavi.db',
+              })}
           >
             Sfoglia
           </Button>

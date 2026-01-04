@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Config, State};
 use zip::write::FileOptions;
 use zip::ZipArchive;
@@ -26,15 +26,14 @@ pub struct AppSettings {
     pub auto_open_referti: Option<bool>,
 }
 
-fn settings_file_path() -> PathBuf {
+pub fn settings_file_path() -> PathBuf {
     let dir = tauri::api::path::app_config_dir(&Config::default())
         .unwrap_or_else(|| PathBuf::from("."));
     let _ = std::fs::create_dir_all(&dir);
     dir.join("settings.json")
 }
 
-#[tauri::command]
-pub async fn load_settings() -> Result<AppSettings, String> {
+pub fn read_settings_from_disk() -> Result<AppSettings, String> {
     let path = settings_file_path();
     if !path.exists() {
         return Ok(AppSettings::default());
@@ -46,15 +45,133 @@ pub async fn load_settings() -> Result<AppSettings, String> {
     Ok(parsed)
 }
 
-#[tauri::command]
-pub async fn save_settings(settings: AppSettings) -> Result<(), String> {
+pub fn write_settings_to_disk(settings: &AppSettings) -> Result<(), String> {
     let path = settings_file_path();
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
     let mut file = File::create(&path).map_err(|e| e.to_string())?;
     file.write_all(json.as_bytes()).map_err(|e| e.to_string())
+}
+
+fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
+    if !dst.exists() {
+        std::fs::create_dir_all(dst)?;
+    }
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let dest_path = dst.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_all(&entry.path(), &dest_path)?;
+        } else {
+            std::fs::copy(entry.path(), &dest_path)?;
+        }
+    }
+    Ok(())
+}
+
+fn resolve_referti_dir(settings: &AppSettings, kind: &str, app_handle: &AppHandle) -> PathBuf {
+    let mut out_dir = if kind == "amb" {
+        settings
+            .referti_amb_path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                tauri::api::path::app_data_dir(&app_handle.config())
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join("referti")
+            })
+    } else {
+        settings
+            .referti_proc_path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                tauri::api::path::app_data_dir(&app_handle.config())
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join("referti")
+            })
+    };
+    let _ = std::fs::create_dir_all(&out_dir);
+    out_dir
+}
+
+#[tauri::command]
+pub async fn load_settings() -> Result<AppSettings, String> {
+    read_settings_from_disk()
+}
+
+#[tauri::command]
+pub async fn save_settings(settings: AppSettings, app_handle: AppHandle) -> Result<(), String> {
+    let old = read_settings_from_disk().unwrap_or_default();
+    let app_config = app_handle.config().clone();
+    let app_data_dir = tauri::api::path::app_data_dir(&app_config)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let default_db = app_data_dir.join("pazienti_tavi.db");
+    let default_referti = app_data_dir.join("referti");
+
+    // Sposta DB se cambiato e vecchio esistente
+    if let Some(new_db) = settings.db_path.as_ref() {
+        let old_db_path = old
+            .db_path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or(default_db.clone());
+        if new_db != old_db_path.to_string_lossy().as_ref() && old_db_path.exists() {
+            if let Some(parent) = Path::new(new_db).parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(rename_err) = std::fs::rename(&old_db_path, new_db) {
+                // fallback copia se rename fallisce (altri volumi o file aperto)
+                std::fs::copy(&old_db_path, new_db).map_err(|e| e.to_string())?;
+                eprintln!("rename db failed, copied instead: {}", rename_err);
+            }
+        }
+    }
+
+    // Sposta referti ambulatorio se cambiato
+    if let Some(new_dir) = settings.referti_amb_path.as_ref() {
+        let old_dir_path = old
+            .referti_amb_path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or(default_referti.clone());
+        if new_dir != old_dir_path.to_string_lossy().as_ref() && old_dir_path.exists() {
+            if let Some(parent) = Path::new(new_dir).parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(rename_err) = std::fs::rename(&old_dir_path, new_dir) {
+                copy_dir_all(&old_dir_path, Path::new(new_dir)).map_err(|e| e.to_string())?;
+                eprintln!("rename referti amb failed, copied instead: {}", rename_err);
+            }
+        } else {
+            let _ = std::fs::create_dir_all(new_dir);
+        }
+    }
+
+    // Sposta referti procedurale se cambiato
+    if let Some(new_dir) = settings.referti_proc_path.as_ref() {
+        let old_dir_path = old
+            .referti_proc_path
+            .as_ref()
+            .map(PathBuf::from)
+            .unwrap_or(default_referti.clone());
+        if new_dir != old_dir_path.to_string_lossy().as_ref() && old_dir_path.exists() {
+            if let Some(parent) = Path::new(new_dir).parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(rename_err) = std::fs::rename(&old_dir_path, new_dir) {
+                copy_dir_all(&old_dir_path, Path::new(new_dir)).map_err(|e| e.to_string())?;
+                eprintln!("rename referti proc failed, copied instead: {}", rename_err);
+            }
+        } else {
+            let _ = std::fs::create_dir_all(new_dir);
+        }
+    }
+
+    write_settings_to_disk(&settings)
 }
 
 #[tauri::command]
@@ -442,9 +559,8 @@ pub async fn generate_ambulatorio_referto(
         writer.finish().map_err(|_| "Errore finale referto".to_string())?;
     }
 
-    let mut out_dir = tauri::api::path::app_data_dir(&app_handle.config())
-        .unwrap_or_else(|| PathBuf::from("."));
-    out_dir.push("referti");
+    let settings = read_settings_from_disk().unwrap_or_default();
+    let mut out_dir = resolve_referti_dir(&settings, "amb", &app_handle);
     create_dir_all(&out_dir).map_err(|_| "Impossibile creare cartella referti".to_string())?;
 
     let filename = sanitize_filename(&format!("{} {}.docx", p.cognome, p.nome));
@@ -643,9 +759,8 @@ pub async fn generate_scheda_procedurale_referto(
         writer.finish().map_err(|_| "Errore finale referto".to_string())?;
     }
 
-    let mut out_dir = tauri::api::path::app_data_dir(&app_handle.config())
-        .unwrap_or_else(|| PathBuf::from("."));
-    out_dir.push("referti");
+    let settings = read_settings_from_disk().unwrap_or_default();
+    let mut out_dir = resolve_referti_dir(&settings, "proc", &app_handle);
     create_dir_all(&out_dir).map_err(|_| "Impossibile creare cartella referti".to_string())?;
 
     let filename = sanitize_filename(&format!("Scheda procedurale - {} {}.docx", p.cognome, p.nome));

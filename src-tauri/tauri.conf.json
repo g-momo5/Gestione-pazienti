@@ -55,7 +55,8 @@
         "signingIdentity": null
       },
       "resources": [
-        "../src/lib/templates/template_amb_strutturale.docx"
+        "../src/lib/templates/template_amb_strutturale.docx",
+        "../src/lib/templates/template_scheda_procedurale.docx"
       ],
       "shortDescription": "Gestionale Pazienti TAVI",
       "icon": [

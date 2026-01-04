@@ -7,6 +7,7 @@ mod models;
 
 use database::Database;
 use std::path::PathBuf;
+use commands::read_settings_from_disk;
 
 fn main() {
     // Determina il percorso del database
@@ -44,21 +45,20 @@ fn main() {
 
 /// Determina il percorso del database nell'app data directory
 fn get_database_path() -> PathBuf {
-    let app_data_dir = tauri::api::path::app_data_dir(&tauri::Config::default())
-        .unwrap_or_else(|| {
-            // Fallback a directory locale se non disponibile
-            PathBuf::from(".")
-        });
-
-    // Crea la directory se non esiste
-    std::fs::create_dir_all(&app_data_dir).ok();
-
-    // Rimuovi il vecchio database se esiste
-    let old_db = app_data_dir.join("registro_tavi.db");
-    if old_db.exists() {
-        let _ = std::fs::remove_file(&old_db);
+    // Prova a leggere dalle impostazioni salvate
+    if let Ok(settings) = read_settings_from_disk() {
+        if let Some(db) = settings.db_path {
+            let path = PathBuf::from(db);
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            return path;
+        }
     }
 
-    // Usa il nuovo database per il gestionale pazienti
+    // Default: app data dir
+    let app_data_dir = tauri::api::path::app_data_dir(&tauri::Config::default())
+        .unwrap_or_else(|| PathBuf::from("."));
+    std::fs::create_dir_all(&app_data_dir).ok();
     app_data_dir.join("pazienti_tavi.db")
 }
