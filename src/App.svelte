@@ -78,6 +78,7 @@
     autoOpenReferti: false,
   };
   let settingsErrors = {};
+  let showInitialSetup = false;
 
   const pickDefined = (obj = {}) =>
     Object.fromEntries(
@@ -118,6 +119,19 @@
     }
   };
 
+  const safeDirname = async (p) => {
+    if (!p?.trim()) return null;
+    try {
+      return await dirname(p);
+    } catch (e) {
+      if (p.includes('/')) return p.slice(0, p.lastIndexOf('/'));
+      if (p.match(/^[A-Za-z]:[\\/]/) && p.lastIndexOf('\\') > 2) {
+        return p.slice(0, p.lastIndexOf('\\'));
+      }
+      return null;
+    }
+  };
+
   async function browsePath(target, opts = { directory: true, key: '' }) {
     try {
       const result = await openDialog({ directory: opts.directory, multiple: false });
@@ -132,12 +146,15 @@
 
   async function loadPersistedSettings() {
     let next = { ...settings };
+    let hadPersisted = false;
     let initialSnapshot = { ...next };
     // Prefer backend config file; fallback a local cache se in browser.
     try {
       const loaded = await invoke('load_settings');
       if (loaded && typeof loaded === 'object') {
-        next = { ...next, ...pickDefined(loaded) };
+        const picked = pickDefined(loaded);
+        if (Object.keys(picked).length > 0) hadPersisted = true;
+        next = { ...next, ...picked };
       }
     } catch (e) {
       console.error('Errore caricamento impostazioni da backend', e);
@@ -147,7 +164,9 @@
       const stored = localStorage.getItem('tavi_settings');
       if (stored) {
         const parsed = JSON.parse(stored);
-        next = { ...next, ...pickDefined(parsed) };
+        const picked = pickDefined(parsed);
+        if (Object.keys(picked).length > 0) hadPersisted = true;
+        next = { ...next, ...picked };
       }
     } catch (e) {
       console.error('Errore caricamento impostazioni locale', e);
@@ -193,8 +212,8 @@
 
     settings = finalSettings;
 
-    // Se abbiamo normalizzato o aggiunto default, persistiamo subito per evitare ritorni ai path vecchi.
-    if (changed) {
+    // Se abbiamo normalizzato o aggiunto default, persistiamo subito solo se avevamo già delle impostazioni salvate.
+    if (hadPersisted && changed) {
       try {
         await invoke('save_settings', { settings: finalSettings });
         localStorage.setItem('tavi_settings', JSON.stringify(finalSettings));
@@ -202,6 +221,9 @@
         console.error('Errore nel salvataggio automatico impostazioni normalizzate', e);
       }
     }
+
+    // Se non c'era nulla salvato, chiedi all'utente al primo avvio.
+    showInitialSetup = !hadPersisted;
   }
 
   async function checkWritableDir(dir) {
@@ -229,17 +251,37 @@
       await removeFile(testFile).catch(() => {});
       return '';
     } catch (e) {
-      console.error('write check failed', e);
-      return 'Percorso non scrivibile';
+      // Se il test di scrittura fallisce, non blocchiamo il salvataggio ma logghiamo per debug.
+      console.warn('write check failed (non bloccante)', targetDir, e);
+      return '';
     }
   }
 
   async function validateAndSaveSettings() {
+    // Normalizza percorsi prima di validare
+    try {
+      const dataDir = await appDataDir().catch(() => '');
+      const docsDir = await documentDir().catch(() => '');
+      const home = await homeDir().catch(() => '');
+      const baseData = dataDir || home || docsDir || (isWindows() ? 'C:\\\\Users\\\\Public' : '/Users/Shared');
+      const baseDocs = docsDir || home || dataDir || (isWindows() ? 'C:\\\\Users\\\\Public' : '/Users/Shared');
+
+      settings = {
+        ...settings,
+        dbPath: await normalizeRelative(settings.dbPath, baseData),
+        backupPath: await normalizeRelative(settings.backupPath, baseData),
+        refertiAmbPath: await normalizeRelative(settings.refertiAmbPath, baseDocs),
+        refertiProcPath: await normalizeRelative(settings.refertiProcPath, baseDocs),
+      };
+    } catch (e) {
+      console.warn('Normalizzazione percorsi in salvataggio impostazioni fallita', e);
+    }
+
     const errors = {};
-    if (!settings.dbPath) errors.dbPath = 'Percorso database obbligatorio';
-    if (!settings.backupPath) errors.backupPath = 'Cartella backup obbligatoria';
-    if (!settings.refertiAmbPath) errors.refertiAmbPath = 'Cartella referti ambulatorio obbligatoria';
-    if (!settings.refertiProcPath) errors.refertiProcPath = 'Cartella referti procedurale obbligatoria';
+    if (!settings.dbPath?.trim()) errors.dbPath = 'Percorso database obbligatorio';
+    if (!settings.backupPath?.trim()) errors.backupPath = 'Cartella backup obbligatoria';
+    if (!settings.refertiAmbPath?.trim()) errors.refertiAmbPath = 'Cartella referti ambulatorio obbligatoria';
+    if (!settings.refertiProcPath?.trim()) errors.refertiProcPath = 'Cartella referti procedurale obbligatoria';
     if (!settings.namingAmb?.trim()) errors.namingAmb = 'Naming obbligatorio';
     if (!settings.namingProc?.trim()) errors.namingProc = 'Naming obbligatorio';
 
@@ -256,28 +298,30 @@
       if (msg) errors.refertiProcPath = msg;
     }
     if (!errors.dbPath) {
-      try {
-        const dir = await dirname(settings.dbPath);
+      const dir = await safeDirname(settings.dbPath);
+      if (!dir) {
+        errors.dbPath = 'Percorso database non valido';
+      } else {
         const msg = await checkWritableDir(dir);
         if (msg) errors.dbPath = msg;
-      } catch (e) {
-        errors.dbPath = 'Percorso database non valido';
       }
     }
 
     settingsErrors = errors;
     if (Object.keys(errors).length > 0) {
       showToast('Correggi gli errori nei campi impostazioni', 'error');
-      return;
+      return false;
     }
 
     try {
       await invoke('save_settings', { settings });
       localStorage.setItem('tavi_settings', JSON.stringify(settings));
       showToast('Impostazioni salvate', 'success');
+      return true;
     } catch (e) {
       console.error(e);
       showToast('Errore nel salvataggio impostazioni', 'error');
+      return false;
     }
   }
 
@@ -549,6 +593,13 @@
   async function closeNewPatientModal() {
     showNewPatientModal = false;
     await refreshData();
+  }
+
+  async function handleInitialSetupSave() {
+    const ok = await validateAndSaveSettings();
+    if (ok) {
+      showInitialSetup = false;
+    }
   }
 
   function validateNewPatient() {
@@ -1050,6 +1101,83 @@
             {savingPatient ? 'Salvataggio...' : 'Salva paziente'}
           </Button>
         </div>
+      </div>
+    </Card>
+  </div>
+{/if}
+
+{#if showInitialSetup}
+  <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+    <Card padding="lg" class="max-w-3xl w-full bg-white shadow-2xl">
+      <div class="mb-4">
+        <h3 class="text-xl font-bold text-textPrimary">Configura percorsi</h3>
+        <p class="text-sm text-textSecondary mt-1">Seleziona dove salvare database e referti.</p>
+      </div>
+      <div class="space-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-start">
+          <Input
+            label="Percorso database"
+            bind:value={settings.dbPath}
+            error={settingsErrors.dbPath}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            class="self-start sm:mt-6"
+            on:click={() => browsePath('database', { directory: false, key: 'dbPath' })}
+          >
+            Sfoglia
+          </Button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-start">
+          <Input
+            label="Cartella backup"
+            bind:value={settings.backupPath}
+            error={settingsErrors.backupPath}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            class="self-start sm:mt-6"
+            on:click={() => browsePath('backup', { directory: true, key: 'backupPath' })}
+          >
+            Sfoglia
+          </Button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-start">
+          <Input
+            label="Cartella referti ambulatorio"
+            bind:value={settings.refertiAmbPath}
+            error={settingsErrors.refertiAmbPath}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            class="self-start sm:mt-6"
+            on:click={() => browsePath('referti ambulatorio', { directory: true, key: 'refertiAmbPath' })}
+          >
+            Sfoglia
+          </Button>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-start">
+          <Input
+            label="Cartella referti procedurale"
+            bind:value={settings.refertiProcPath}
+            error={settingsErrors.refertiProcPath}
+          />
+          <Button
+            variant="secondary"
+            size="sm"
+            class="self-start sm:mt-6"
+            on:click={() => browsePath('referti procedurale', { directory: true, key: 'refertiProcPath' })}
+          >
+            Sfoglia
+          </Button>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 mt-6">
+        <Button variant="secondary" on:click={() => (showInitialSetup = false)}>Annulla</Button>
+        <Button variant="primary" on:click={handleInitialSetupSave}>Salva e continua</Button>
       </div>
     </Card>
   </div>
