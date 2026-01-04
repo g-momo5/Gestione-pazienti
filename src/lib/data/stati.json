@@ -1,0 +1,1047 @@
+[
+  {
+    "label": "Afghanistan",
+    "codice": "Z200",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Albania",
+    "codice": "Z100",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Algeria",
+    "codice": "Z301",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Andorra",
+    "codice": "Z101",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Angola",
+    "codice": "Z302",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Antigua e Barbuda",
+    "codice": "Z532",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Arabia Saudita",
+    "codice": "Z203",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Argentina",
+    "codice": "Z600",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Armenia",
+    "codice": "Z252",
+    "tipo": "STATO"
+  },
+  {
+    "label": "ARUBA",
+    "codice": "Z501",
+    "tipo": "TERRITORIO"
+  },
+  {
+    "label": "Australia",
+    "codice": "Z700",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Austria",
+    "codice": "Z102",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Azerbaigian",
+    "codice": "Z253",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Bahamas",
+    "codice": "Z502",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Bahrein",
+    "codice": "Z204",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Bangladesh",
+    "codice": "Z249",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Barbados",
+    "codice": "Z522",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Belgio",
+    "codice": "Z103",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Belize",
+    "codice": "Z512",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Benin (ex Dahomey)",
+    "codice": "Z314",
+    "tipo": "STATO"
+  },
+  {
+    "label": "BERMUDA",
+    "codice": "Z400",
+    "tipo": "TERRITORIO"
+  },
+  {
+    "label": "Bhutan",
+    "codice": "Z205",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Bielorussia",
+    "codice": "Z139",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Bolivia",
+    "codice": "Z601",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Bosnia-Erzegovina",
+    "codice": "Z153",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Botswana",
+    "codice": "Z358",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Brasile",
+    "codice": "Z602",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Brunei",
+    "codice": "Z207",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Bulgaria",
+    "codice": "Z104",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Burkina Faso (ex Alto Volta)",
+    "codice": "Z354",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Burundi",
+    "codice": "Z305",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Cambogia",
+    "codice": "Z208",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Camerun",
+    "codice": "Z306",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Canada",
+    "codice": "Z401",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Capo Verde",
+    "codice": "Z307",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Ceca, Repubblica",
+    "codice": "Z156",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Centrafricana, Repubblica",
+    "codice": "Z308",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Ciad",
+    "codice": "Z309",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Cile",
+    "codice": "Z603",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Cinese, Repubblica Popolare",
+    "codice": "Z210",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Cipro",
+    "codice": "Z211",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Colombia",
+    "codice": "Z604",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Comore",
+    "codice": "Z310",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Congo (Repubblica del)",
+    "codice": "Z311",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Congo, Repubblica democratica del (ex Zaire)",
+    "codice": "Z312",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Corea, Repubblica (Corea del Sud)",
+    "codice": "Z213",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Corea, Repubblica Popolare Democratica (Corea del Nord)",
+    "codice": "Z214",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Costa d'Avorio",
+    "codice": "Z313",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Costa Rica",
+    "codice": "Z503",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Croazia",
+    "codice": "Z149",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Cuba",
+    "codice": "Z504",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Danimarca",
+    "codice": "Z107",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Dominica",
+    "codice": "Z526",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Dominicana, Repubblica",
+    "codice": "Z505",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Ecuador",
+    "codice": "Z605",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Egitto",
+    "codice": "Z336",
+    "tipo": "STATO"
+  },
+  {
+    "label": "El Salvador",
+    "codice": "Z506",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Emirati Arabi Uniti",
+    "codice": "Z215",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Eritrea",
+    "codice": "Z368",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Estonia",
+    "codice": "Z144",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Etiopia",
+    "codice": "Z315",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Figi",
+    "codice": "Z704",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Filippine",
+    "codice": "Z216",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Finlandia",
+    "codice": "Z109",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Francia",
+    "codice": "Z110",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Gabon",
+    "codice": "Z316",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Gambia",
+    "codice": "Z317",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Georgia",
+    "codice": "Z254",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Germania",
+    "codice": "Z112",
+    "tipo": "STATO"
+  },
+  {
+    "label": "GERUSALEMME",
+    "codice": "Z260",
+    "tipo": "ALTRO"
+  },
+  {
+    "label": "Ghana",
+    "codice": "Z318",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Giamaica",
+    "codice": "Z507",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Giappone",
+    "codice": "Z219",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Gibuti",
+    "codice": "Z361",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Giordania",
+    "codice": "Z220",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Grecia",
+    "codice": "Z115",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Grenada",
+    "codice": "Z524",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Guatemala",
+    "codice": "Z509",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Guinea",
+    "codice": "Z319",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Guinea Bissau",
+    "codice": "Z320",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Guinea Equatoriale",
+    "codice": "Z321",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Guyana",
+    "codice": "Z606",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Haiti",
+    "codice": "Z510",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Honduras",
+    "codice": "Z511",
+    "tipo": "STATO"
+  },
+  {
+    "label": "India",
+    "codice": "Z222",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Indonesia",
+    "codice": "Z223",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Iran, Repubblica Islamica del",
+    "codice": "Z224",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Iraq",
+    "codice": "Z225",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Irlanda",
+    "codice": "Z116",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Islanda",
+    "codice": "Z117",
+    "tipo": "STATO"
+  },
+  {
+    "label": "ISOLE CAYMAN",
+    "codice": "Z530",
+    "tipo": "TERRITORIO"
+  },
+  {
+    "label": "ISOLE COOK",
+    "codice": "Z703",
+    "tipo": "TERRITORIO"
+  },
+  {
+    "label": "ISOLE FAER OER",
+    "codice": "Z108",
+    "tipo": "TERRITORIO"
+  },
+  {
+    "label": "ISOLE TURKS E CAICOS",
+    "codice": "Z519",
+    "tipo": "TERRITORIO"
+  },
+  {
+    "label": "ISOLE VERGINI BRITANNICHE",
+    "codice": "Z525",
+    "tipo": "TERRITORIO"
+  },
+  {
+    "label": "ISOLE WALLIS E FUTUNA",
+    "codice": "Z729",
+    "tipo": "TERRITORIO"
+  },
+  {
+    "label": "Israele",
+    "codice": "Z226",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Kazakhstan",
+    "codice": "Z255",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Kenya",
+    "codice": "Z322",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Kirghizistan",
+    "codice": "Z256",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Kiribati",
+    "codice": "Z731",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Kosovo",
+    "codice": "Z160",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Kuwait",
+    "codice": "Z227",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Laos",
+    "codice": "Z228",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Lesotho",
+    "codice": "Z359",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Lettonia",
+    "codice": "Z145",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Libano",
+    "codice": "Z229",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Liberia",
+    "codice": "Z325",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Libia",
+    "codice": "Z326",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Liechtenstein",
+    "codice": "Z119",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Lituania",
+    "codice": "Z146",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Lussemburgo",
+    "codice": "Z120",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Macedonia, Repubblica di",
+    "codice": "Z148",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Madagascar",
+    "codice": "Z327",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Malawi",
+    "codice": "Z328",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Malaysia",
+    "codice": "Z247",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Maldive",
+    "codice": "Z232",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Mali",
+    "codice": "Z329",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Malta",
+    "codice": "Z121",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Marocco",
+    "codice": "Z330",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Marshall, Isole",
+    "codice": "Z711",
+    "tipo": "STATO"
+  },
+  {
+    "label": "MARTINICA",
+    "codice": "Z513",
+    "tipo": "TERRITORIO"
+  },
+  {
+    "label": "Mauritania",
+    "codice": "Z331",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Mauritius",
+    "codice": "Z332",
+    "tipo": "STATO"
+  },
+  {
+    "label": "MAYOTTE",
+    "codice": "Z360",
+    "tipo": "TERRITORIO"
+  },
+  {
+    "label": "Messico",
+    "codice": "Z514",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Micronesia, Stati Federati",
+    "codice": "Z735",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Moldova",
+    "codice": "Z140",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Monaco",
+    "codice": "Z123",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Mongolia",
+    "codice": "Z233",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Montenegro",
+    "codice": "Z159",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Mozambico",
+    "codice": "Z333",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Myanmar (ex Birmania)",
+    "codice": "Z206",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Namibia",
+    "codice": "Z300",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Nauru",
+    "codice": "Z713",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Nepal",
+    "codice": "Z234",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Nicaragua",
+    "codice": "Z515",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Niger",
+    "codice": "Z334",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Nigeria",
+    "codice": "Z335",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Norvegia",
+    "codice": "Z125",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Nuova Zelanda",
+    "codice": "Z719",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Oman",
+    "codice": "Z235",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Paesi Bassi",
+    "codice": "Z126",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Pakistan",
+    "codice": "Z236",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Palau",
+    "codice": "Z734",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Panama",
+    "codice": "Z516",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Papua Nuova Guinea",
+    "codice": "Z730",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Paraguay",
+    "codice": "Z610",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Perù",
+    "codice": "Z611",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Polonia",
+    "codice": "Z127",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Portogallo",
+    "codice": "Z128",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Qatar",
+    "codice": "Z237",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Regno Unito",
+    "codice": "Z114",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Romania",
+    "codice": "Z129",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Ruanda",
+    "codice": "Z338",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Russa, Federazione",
+    "codice": "Z154",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Saint Kitts e Nevis",
+    "codice": "Z533",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Saint Lucia",
+    "codice": "Z527",
+    "tipo": "STATO"
+  },
+  {
+    "label": "SAINT PIERRE E MIQUELON",
+    "codice": "Z403",
+    "tipo": "TERRITORIO"
+  },
+  {
+    "label": "Saint Vincent e Grenadine",
+    "codice": "Z528",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Salomone, Isole",
+    "codice": "Z724",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Samoa",
+    "codice": "Z726",
+    "tipo": "STATO"
+  },
+  {
+    "label": "San Marino",
+    "codice": "Z130",
+    "tipo": "STATO"
+  },
+  {
+    "label": "SANT'ELENA",
+    "codice": "Z340",
+    "tipo": "TERRITORIO"
+  },
+  {
+    "label": "São Tomé e Principe",
+    "codice": "Z341",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Senegal",
+    "codice": "Z343",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Serbia, Repubblica di",
+    "codice": "Z158",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Seychelles",
+    "codice": "Z342",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Sierra Leone",
+    "codice": "Z344",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Singapore",
+    "codice": "Z248",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Siria",
+    "codice": "Z240",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Slovacchia",
+    "codice": "Z155",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Slovenia",
+    "codice": "Z150",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Somalia",
+    "codice": "Z345",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Spagna",
+    "codice": "Z131",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Sri Lanka (ex Ceylon)",
+    "codice": "Z209",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Stati Uniti d'America",
+    "codice": "Z404",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Stato della Città del Vaticano",
+    "codice": "Z106",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Sud Africa",
+    "codice": "Z347",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Sud Sudan, Repubblica del",
+    "codice": "Z907",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Sudan",
+    "codice": "Z348",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Suriname",
+    "codice": "Z608",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Svezia",
+    "codice": "Z132",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Svizzera",
+    "codice": "Z133",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Swaziland",
+    "codice": "Z349",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Tagikistan",
+    "codice": "Z257",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Taiwan (ex Formosa)",
+    "codice": "Z217",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Tanzania",
+    "codice": "Z357",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Territori dell'Autonomia Palestinese",
+    "codice": "Z161",
+    "tipo": "ALTRO"
+  },
+  {
+    "label": "Thailandia",
+    "codice": "Z241",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Timor Orientale",
+    "codice": "Z242",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Togo",
+    "codice": "Z351",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Tonga",
+    "codice": "Z728",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Trinidad e Tobago",
+    "codice": "Z612",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Tunisia",
+    "codice": "Z352",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Turchia",
+    "codice": "Z243",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Turkmenistan",
+    "codice": "Z258",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Tuvalu",
+    "codice": "Z732",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Ucraina",
+    "codice": "Z138",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Uganda",
+    "codice": "Z353",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Ungheria",
+    "codice": "Z134",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Uruguay",
+    "codice": "Z613",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Uzbekistan",
+    "codice": "Z259",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Vanuatu",
+    "codice": "Z733",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Venezuela",
+    "codice": "Z614",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Vietnam",
+    "codice": "Z251",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Yemen",
+    "codice": "Z246",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Zambia",
+    "codice": "Z355",
+    "tipo": "STATO"
+  },
+  {
+    "label": "Zimbabwe (ex Rhodesia)",
+    "codice": "Z337",
+    "tipo": "STATO"
+  }
+]

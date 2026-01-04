@@ -1,0 +1,87 @@
+{
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devPath": "http://localhost:1420",
+    "distDir": "../dist",
+    "withGlobalTauri": false
+  },
+  "package": {
+    "productName": "Gestionale Pazienti TAVI",
+    "version": "1.0.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "open": true
+      },
+      "dialog": {
+        "all": false,
+        "open": true,
+        "save": true
+      },
+      "fs": {
+        "all": true,
+        "scope": [
+          "$APPDATA/*",
+          "$APPDATA/**",
+          "$HOME/*",
+          "$HOME/**",
+          "$DOCUMENT/*",
+          "$DOCUMENT/**",
+          "/*",
+          "/**"
+        ]
+      }
+    },
+    "bundle": {
+      "active": true,
+      "category": "Medical",
+      "copyright": "© 2024 Dr. Mohamed. All rights reserved.",
+      "deb": {
+        "depends": []
+      },
+      "externalBin": [],
+      "icon": [],
+      "identifier": "com.hospital.gestionale-pazienti-tavi",
+      "longDescription": "Sistema desktop per la registrazione e gestione delle procedure TAVI (Transcatheter Aortic Valve Implantation) presso l'ospedale.",
+      "macOS": {
+        "entitlements": null,
+        "exceptionDomain": "",
+        "frameworks": [],
+        "providerShortName": null,
+        "signingIdentity": null
+      },
+      "resources": [
+        "../src/lib/templates/template_amb_strutturale.docx"
+      ],
+      "shortDescription": "Gestionale Pazienti TAVI",
+      "targets": "all",
+      "windows": {
+        "certificateThumbprint": null,
+        "digestAlgorithm": "sha256",
+        "timestampUrl": ""
+      }
+    },
+    "security": {
+      "csp": null
+    },
+    "updater": {
+      "active": false
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "resizable": true,
+        "title": "Gestionale Pazienti TAVI",
+        "width": 1400,
+        "height": 900,
+        "minWidth": 1200,
+        "minHeight": 700,
+        "center": true
+      }
+    ]
+  }
+}
