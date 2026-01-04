@@ -58,6 +58,11 @@
         "../src/lib/templates/template_amb_strutturale.docx"
       ],
       "shortDescription": "Gestionale Pazienti TAVI",
+      "icon": [
+        "icons/icon.icns",
+        "icons/icon.ico",
+        "icons/icon.png"
+      ],
       "targets": "all",
       "windows": {
         "certificateThumbprint": null,
