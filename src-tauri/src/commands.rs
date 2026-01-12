@@ -494,7 +494,12 @@ pub async fn generate_ambulatorio_referto(
 
     let resolver_path = app_handle
         .path_resolver()
-        .resolve_resource("template_amb_strutturale.docx");
+        .resolve_resource("src/lib/templates/template_amb_strutturale.docx")
+        .or_else(|| {
+            app_handle
+                .path_resolver()
+                .resolve_resource("template_amb_strutturale.docx")
+        });
 
     let template_path = if let Some(path) = resolver_path.filter(|p| p.exists()) {
         path
@@ -693,7 +698,12 @@ pub async fn generate_scheda_procedurale_referto(
 
     let resolver_path = app_handle
         .path_resolver()
-        .resolve_resource("template_scheda_procedurale.docx");
+        .resolve_resource("src/lib/templates/template_scheda_procedurale.docx")
+        .or_else(|| {
+            app_handle
+                .path_resolver()
+                .resolve_resource("template_scheda_procedurale.docx")
+        });
 
     let template_path = if let Some(path) = resolver_path.filter(|p| p.exists()) {
         path
