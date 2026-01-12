@@ -11,6 +11,7 @@ use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Config, State};
+use tauri::Manager;
 use zip::write::FileOptions;
 use zip::ZipArchive;
 
@@ -70,6 +71,64 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+fn find_resource_file(root: &Path, filename: &str) -> Option<PathBuf> {
+    if !root.exists() {
+        return None;
+    }
+    let entries = std::fs::read_dir(root).ok()?;
+    for entry in entries {
+        let entry = entry.ok()?;
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(found) = find_resource_file(&path, filename) {
+                return Some(found);
+            }
+        } else if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name == filename)
+            .unwrap_or(false)
+        {
+            return Some(path);
+        }
+    }
+    None
+}
+
+fn resolve_template_path(app_handle: &AppHandle, filename: &str) -> Result<PathBuf, String> {
+    let candidates = [
+        format!("src/lib/templates/{}", filename),
+        filename.to_string(),
+    ];
+
+    for rel in candidates.iter() {
+        if let Some(path) = app_handle.path_resolver().resolve_resource(rel) {
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+    }
+
+    let env = app_handle.env();
+    if let Some(resource_dir) = tauri::api::path::resource_dir(app_handle.package_info(), &env) {
+        let direct_paths = [
+            resource_dir.join(&candidates[0]),
+            resource_dir.join("_up_").join(&candidates[0]),
+            resource_dir.join(filename),
+        ];
+        for path in direct_paths.iter() {
+            if path.exists() {
+                return Ok(path.to_path_buf());
+            }
+        }
+        if let Some(found) = find_resource_file(&resource_dir, filename) {
+            return Ok(found);
+        }
+    }
+
+    Err(format!("Template referto non trovato ({})", filename))
 }
 
 fn resolve_referti_dir(settings: &AppSettings, kind: &str, app_handle: &AppHandle) -> PathBuf {
@@ -492,29 +551,7 @@ pub async fn generate_ambulatorio_referto(
         ("cardiologo", p.medico_nome.unwrap_or_default()),
     ]);
 
-    let resolver_path = app_handle
-        .path_resolver()
-        .resolve_resource("src/lib/templates/template_amb_strutturale.docx")
-        .or_else(|| {
-            app_handle
-                .path_resolver()
-                .resolve_resource("template_amb_strutturale.docx")
-        });
-
-    let template_path = if let Some(path) = resolver_path.filter(|p| p.exists()) {
-        path
-    } else {
-        let fallbacks = [
-            PathBuf::from("src/lib/templates/template_amb_strutturale.docx"),
-            PathBuf::from("../src/lib/templates/template_amb_strutturale.docx"),
-        ];
-        fallbacks
-            .into_iter()
-            .find(|p| p.exists())
-            .ok_or_else(|| {
-                "Template referto non trovato (template_amb_strutturale.docx)".to_string()
-            })?
-    };
+    let template_path = resolve_template_path(&app_handle, "template_amb_strutturale.docx")?;
 
     let mut template_file =
         File::open(&template_path).map_err(|_| "Impossibile aprire il template".to_string())?;
@@ -696,29 +733,7 @@ pub async fn generate_scheda_procedurale_referto(
         p.procedurale_valvuloplastica.as_deref() == Some("no"),
     ];
 
-    let resolver_path = app_handle
-        .path_resolver()
-        .resolve_resource("src/lib/templates/template_scheda_procedurale.docx")
-        .or_else(|| {
-            app_handle
-                .path_resolver()
-                .resolve_resource("template_scheda_procedurale.docx")
-        });
-
-    let template_path = if let Some(path) = resolver_path.filter(|p| p.exists()) {
-        path
-    } else {
-        let fallbacks = [
-            PathBuf::from("src/lib/templates/template_scheda_procedurale.docx"),
-            PathBuf::from("../src/lib/templates/template_scheda_procedurale.docx"),
-        ];
-        fallbacks
-            .into_iter()
-            .find(|p| p.exists())
-            .ok_or_else(|| {
-                "Template referto non trovato (template_scheda_procedurale.docx)".to_string()
-            })?
-    };
+    let template_path = resolve_template_path(&app_handle, "template_scheda_procedurale.docx")?;
 
     let mut template_file =
         File::open(&template_path).map_err(|_| "Impossibile aprire il template".to_string())?;

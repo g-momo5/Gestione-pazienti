@@ -75,7 +75,7 @@
     refertiProcPath: '',
     namingAmb: DEFAULT_REFERTI_AMB_NAMING,
     namingProc: DEFAULT_REFERTI_PROC_NAMING,
-    autoOpenReferti: false,
+    autoOpenReferti: true,
   };
   let settingsErrors = {};
   let showInitialSetup = false;

@@ -14,6 +14,7 @@
   import { showToast } from '../stores/toastStore.js';
   import { loadPlaces } from '../utils/placeSuggestions.js';
   import { invoke } from '@tauri-apps/api/tauri';
+  import { open as openExternal } from '@tauri-apps/api/shell';
 
   export let patient = null;
   export let loading = false;
@@ -718,6 +719,7 @@
       const path = typeof result === 'string' ? result : '';
       if (path) {
         showToast(`Referto generato: ${path}`, 'success');
+        await maybeOpenReferto(path);
       } else {
         showToast('Referto generato', 'success');
       }
@@ -746,6 +748,7 @@
       const path = typeof result === 'string' ? result : '';
       if (path) {
         showToast(`Referto generato: ${path}`, 'success');
+        await maybeOpenReferto(path);
       } else {
         showToast('Referto generato', 'success');
       }
@@ -755,6 +758,43 @@
       showToast(msg, 'error');
     } finally {
       generatingReferto = false;
+    }
+  }
+
+  async function shouldAutoOpenReferto() {
+    try {
+      const stored = localStorage.getItem('tavi_settings');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (typeof parsed?.autoOpenReferti === 'boolean') {
+          return parsed.autoOpenReferti;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    try {
+      const loaded = await invoke('load_settings');
+      if (loaded && typeof loaded === 'object' && typeof loaded.autoOpenReferti === 'boolean') {
+        return loaded.autoOpenReferti;
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    return true; // default: apri il referto
+  }
+
+  async function maybeOpenReferto(path) {
+    if (!path) return;
+    const shouldOpen = await shouldAutoOpenReferto();
+    if (!shouldOpen) return;
+    try {
+      await openExternal(path);
+    } catch (e) {
+      console.error('Errore apertura referto', e);
+      showToast('Errore apertura referto', 'error');
     }
   }
 
