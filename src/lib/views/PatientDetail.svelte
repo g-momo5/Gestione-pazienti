@@ -9,12 +9,19 @@
   import IconBadge from '../components/ui/IconBadge.svelte';
   import SectionPanel from '../components/ui/SectionPanel.svelte';
   import { formatDateIT, calculateAge } from '../utils/dateUtils.js';
+  import { tick } from 'svelte';
   import { calculateBMI, calculateBSA, categorizeBMI, formatNumberIT } from '../utils/statistics.js';
   import { changePatientStatus, loadPatient, updatePatient, deletePatient } from '../stores/patientStore.js';
   import { showToast } from '../stores/toastStore.js';
   import { loadPlaces } from '../utils/placeSuggestions.js';
   import { invoke } from '@tauri-apps/api/tauri';
+  import { readBinaryFile } from '@tauri-apps/api/fs';
   import { open as openExternal } from '@tauri-apps/api/shell';
+  import { renderAsync } from 'docx-preview';
+  import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf';
+  import pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker?url';
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
   export let patient = null;
   export let loading = false;
@@ -187,6 +194,18 @@
   let savingSchedaProcedurale = false;
   let generatingSchedaReferto = false;
   let generatingReferto = false;
+  let generatingConsenso = false;
+  let generatingEsami = false;
+  let showPrintPreview = false;
+  let printMode = 'html';
+  let printTitle = '';
+  let printHtml = '';
+  let printDocxPath = '';
+  let printPdfPath = '';
+  let printDocxContainer = null;
+  let printPdfContainer = null;
+  let renderingPdf = false;
+  let autoPrintPending = false;
   let deletingPatient = false;
   let showDeleteConfirm = false;
   const PLACE_DATA = loadPlaces();
@@ -761,6 +780,175 @@
     }
   }
 
+  async function generateConsensoInformato() {
+    if (!patient?.patient?.id) return;
+    generatingConsenso = true;
+    try {
+      const result = await invoke('generate_consenso_informato', {
+        patientId: patient.patient.id
+      });
+      const path = typeof result === 'string' ? result : '';
+      if (path) {
+        showToast('Apro la schermata di stampa del consenso informato...', 'info');
+        await openPrintPreview({
+          title: 'Consenso informato',
+          docxPath: path
+        });
+      } else {
+        showToast('Consenso informato generato', 'success');
+      }
+    } catch (e) {
+      console.error('Errore consenso informato', e);
+      const msg = typeof e === 'string' ? e : e?.message || 'Errore durante la generazione del consenso informato';
+      showToast(msg, 'error');
+    } finally {
+      generatingConsenso = false;
+    }
+  }
+
+  async function generateEsamiEmatochimici() {
+    if (!patient?.patient?.id) return;
+    generatingEsami = true;
+    try {
+      const result = await invoke('generate_esami_ematochimici', {
+        patientId: patient.patient.id
+      });
+      const path = typeof result === 'string' ? result : '';
+      if (path) {
+        showToast('Apro la schermata di stampa degli esami ematochimici...', 'info');
+        await openPrintPreview({
+          title: 'Esami ematochimici',
+          pdfPath: path
+        });
+      } else {
+        showToast('Modulo esami ematochimici generato', 'success');
+      }
+    } catch (e) {
+      console.error('Errore esami ematochimici', e);
+      const msg = typeof e === 'string' ? e : e?.message || 'Errore durante la generazione del modulo ematochimici';
+      showToast(msg, 'error');
+    } finally {
+      generatingEsami = false;
+    }
+  }
+
+  async function openPrintPreview({ title, html, pdfPath, docxPath }) {
+    printTitle = title || 'Anteprima stampa';
+    if (docxPath) {
+      printMode = 'docx';
+      printDocxPath = docxPath;
+      printPdfPath = '';
+      printHtml = '';
+      renderingPdf = false;
+    } else if (html) {
+      printMode = 'html';
+      printHtml = html;
+      printDocxPath = '';
+      printPdfPath = '';
+      renderingPdf = false;
+    } else if (pdfPath) {
+      printMode = 'pdf';
+      printPdfPath = pdfPath;
+      printDocxPath = '';
+      printHtml = '';
+    }
+    showPrintPreview = true;
+    autoPrintPending = true;
+    await tick();
+    if (printMode === 'docx') {
+      await renderDocxPreview();
+      if (autoPrintPending) {
+        autoPrintPending = false;
+        await triggerPrint();
+      }
+    } else if (printMode === 'pdf') {
+      await renderPdfPreview();
+      if (autoPrintPending) {
+        autoPrintPending = false;
+        await triggerPrint();
+      }
+    } else if (printMode === 'html') {
+      await triggerPrint();
+      autoPrintPending = false;
+    }
+  }
+
+  function closePrintPreview() {
+    showPrintPreview = false;
+    printHtml = '';
+    printDocxPath = '';
+    printPdfPath = '';
+    autoPrintPending = false;
+    renderingPdf = false;
+    if (printDocxContainer) {
+      printDocxContainer.innerHTML = '';
+    }
+    if (printPdfContainer) {
+      printPdfContainer.innerHTML = '';
+    }
+  }
+
+  async function triggerPrint() {
+    try {
+      await invoke('print_window');
+      return;
+    } catch (e) {
+      console.error('Errore stampa', e);
+      // fallback to window.print
+    }
+    window.print();
+  }
+
+  async function renderDocxPreview() {
+    if (!printDocxPath || !printDocxContainer) return;
+    try {
+      const buffer = await readBinaryFile(printDocxPath);
+      printDocxContainer.innerHTML = '';
+      await renderAsync(buffer, printDocxContainer, printDocxContainer, {
+        inWrapper: true,
+        className: 'docx',
+        useBase64URL: true,
+      });
+    } catch (e) {
+      console.error('Errore anteprima consenso', e);
+      showToast('Errore durante la preparazione del consenso informato', 'error');
+    }
+  }
+
+  async function renderPdfPreview() {
+    if (!printPdfPath || !printPdfContainer) return;
+    try {
+      renderingPdf = true;
+      printPdfContainer.innerHTML = '';
+      const buffer = await readBinaryFile(printPdfPath);
+      const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+      const containerWidth = printPdfContainer.clientWidth || 840;
+      const dpr = window.devicePixelRatio || 1;
+
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
+        const page = await pdf.getPage(pageNum);
+        const baseViewport = page.getViewport({ scale: 1 });
+        const scale = containerWidth / baseViewport.width;
+        const viewport = page.getViewport({ scale: scale * dpr });
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.style.width = `${baseViewport.width * scale}px`;
+        canvas.style.height = `${baseViewport.height * scale}px`;
+        if (context) {
+          await page.render({ canvasContext: context, viewport }).promise;
+        }
+        printPdfContainer.appendChild(canvas);
+      }
+    } catch (e) {
+      console.error('Errore anteprima PDF', e);
+      showToast('Errore durante la visualizzazione del PDF', 'error');
+    } finally {
+      renderingPdf = false;
+    }
+  }
+
   async function shouldAutoOpenReferto() {
     try {
       const stored = localStorage.getItem('tavi_settings');
@@ -786,16 +974,27 @@
     return true; // default: apri il referto
   }
 
+  async function openRefertoFile(path) {
+    if (!path) return;
+    const fileUrl = path.startsWith('file://') ? path : `file://${encodeURI(path)}`;
+    try {
+      await openExternal(path);
+    } catch (e) {
+      try {
+        await openExternal(fileUrl);
+      } catch (e2) {
+        console.error('Errore apertura referto', e, e2);
+        const msg = e2?.message || e?.message || 'Errore apertura referto';
+        showToast(msg, 'error');
+      }
+    }
+  }
+
   async function maybeOpenReferto(path) {
     if (!path) return;
     const shouldOpen = await shouldAutoOpenReferto();
     if (!shouldOpen) return;
-    try {
-      await openExternal(path);
-    } catch (e) {
-      console.error('Errore apertura referto', e);
-      showToast('Errore apertura referto', 'error');
-    }
+    await openRefertoFile(path);
   }
 
   $: if (patient?.patient?.id && patient.patient.id !== lastLoadedChecklistId) {
@@ -874,6 +1073,25 @@
             <span class="font-medium">{patient.status}</span>
           </div>
         </div>
+      </div>
+
+      <div class="flex flex-col sm:flex-row lg:flex-col gap-2 w-full lg:w-auto">
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={generatingConsenso}
+          on:click={generateConsensoInformato}
+        >
+          {generatingConsenso ? 'Generazione...' : 'Stampa consenso informato'}
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={generatingEsami}
+          on:click={generateEsamiEmatochimici}
+        >
+          {generatingEsami ? 'Generazione...' : 'Stampa esami ematochimici'}
+        </Button>
       </div>
 
       <div class="w-full max-w-xs space-y-2">
@@ -1486,6 +1704,51 @@
       </div>
     </div>
 
+    {#if showPrintPreview}
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div
+        class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 print-overlay"
+        on:click={closePrintPreview}
+      >
+        <div
+          class="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+          on:click|stopPropagation
+        >
+          <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-4 no-print">
+            <div>
+              <h3 class="text-lg font-semibold text-textPrimary">{printTitle}</h3>
+              <p class="text-xs text-textSecondary">Anteprima del documento pronta per la stampa</p>
+            </div>
+            <Button variant="text" size="sm" on:click={closePrintPreview}>Chiudi</Button>
+          </div>
+
+          <div class="flex-1 overflow-auto bg-gray-50 p-6">
+            <div class="print-surface bg-white shadow-sm mx-auto w-full max-w-[840px]">
+              {#if printMode === 'docx'}
+                <div class="print-docx docx p-8" bind:this={printDocxContainer}></div>
+              {:else if printMode === 'pdf'}
+                <div class="print-pdf p-6" bind:this={printPdfContainer}>
+                  {#if renderingPdf}
+                    <p class="text-sm text-textSecondary">Caricamento PDF...</p>
+                  {/if}
+                </div>
+              {:else}
+                <div class="print-content p-8">
+                  {@html printHtml}
+                </div>
+              {/if}
+            </div>
+          </div>
+
+          <div class="px-5 py-4 border-t border-gray-200 flex justify-end gap-2 no-print">
+            <Button variant="text" size="sm" on:click={closePrintPreview}>Chiudi</Button>
+            <Button variant="primary" size="sm" on:click={triggerPrint}>Stampa</Button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
     {#if showDeleteConfirm}
       <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" on:click={cancelDelete}>
         <div class="max-w-md w-full" on:click|stopPropagation>
@@ -1512,3 +1775,50 @@
 
   </div>
 {/if}
+
+<style>
+  .print-content {
+    font-family: "Times New Roman", serif;
+    font-size: 12pt;
+    line-height: 1.4;
+    color: #111;
+  }
+
+  .print-content p {
+    margin: 0 0 12px;
+  }
+
+  .print-pdf canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin: 0 auto 16px;
+  }
+
+  @media print {
+    :global(body *) {
+      visibility: hidden;
+    }
+
+    :global(.print-surface),
+    :global(.print-surface *) {
+      visibility: visible;
+    }
+
+    :global(.print-overlay) {
+      background: transparent;
+    }
+
+    :global(.print-surface) {
+      position: fixed;
+      inset: 0;
+      margin: 0;
+      max-width: none;
+      box-shadow: none;
+    }
+
+    :global(.no-print) {
+      display: none !important;
+    }
+  }
+</style>

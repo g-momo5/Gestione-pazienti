@@ -15,7 +15,7 @@
       "all": false,
       "shell": {
         "all": false,
-        "open": true
+        "open": "^(file://.*|/.*|[A-Za-z]:\\\\.*)$"
       },
       "dialog": {
         "all": false,
@@ -56,7 +56,9 @@
       },
       "resources": [
         "../src/lib/templates/template_amb_strutturale.docx",
-        "../src/lib/templates/template_scheda_procedurale.docx"
+        "../src/lib/templates/template_scheda_procedurale.docx",
+        "../src/lib/templates/ee_tavi.pdf",
+        "../src/lib/templates/consenso_informato_TAVI.docx"
       ],
       "shortDescription": "Gestionale Pazienti TAVI",
       "icon": [

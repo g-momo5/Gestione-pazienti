@@ -14,7 +14,9 @@
   "dependencies": {
     "@tabler/icons-svelte": "^3.35.0",
     "@tauri-apps/api": "^1.5.3",
+    "docx-preview": "^0.3.7",
     "echarts": "^5.4.3",
+    "pdfjs-dist": "^3.11.174",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

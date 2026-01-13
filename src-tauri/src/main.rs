@@ -36,6 +36,11 @@ fn main() {
             commands::get_patients_by_status,
             commands::generate_ambulatorio_referto,
             commands::generate_scheda_procedurale_referto,
+            commands::generate_consenso_informato,
+            commands::generate_consenso_informato_html,
+            commands::generate_esami_ematochimici,
+            commands::print_file,
+            commands::print_window,
             commands::load_settings,
             commands::save_settings,
         ])

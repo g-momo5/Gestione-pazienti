@@ -10,7 +10,9 @@ use std::collections::HashMap;
 use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Config, State};
+use std::process::Command;
+use std::time::Duration;
+use tauri::{AppHandle, Config, State, Window};
 use tauri::Manager;
 use zip::write::FileOptions;
 use zip::ZipArchive;
@@ -131,6 +133,227 @@ fn resolve_template_path(app_handle: &AppHandle, filename: &str) -> Result<PathB
     Err(format!("Template referto non trovato ({})", filename))
 }
 
+fn decode_xml_entities(value: &str) -> String {
+    value
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+}
+
+fn escape_html(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+#[derive(Default, Clone)]
+struct StyleInfo {
+    align: Option<String>,
+    size: Option<f32>,
+    bold: bool,
+    italic: bool,
+    underline: bool,
+}
+
+fn parse_styles(styles_xml: &str) -> HashMap<String, StyleInfo> {
+    let style_re = Regex::new(r#"(?s)<w:style[^>]*w:styleId="([^"]+)"[^>]*>(.*?)</w:style>"#)
+        .unwrap();
+    let ppr_re = Regex::new(r"(?s)<w:pPr[^>]*>(.*?)</w:pPr>").unwrap();
+    let rpr_re = Regex::new(r"(?s)<w:rPr[^>]*>(.*?)</w:rPr>").unwrap();
+    let align_re = Regex::new(r#"<w:jc[^>]*w:val="([^"]+)""#).unwrap();
+    let sz_re = Regex::new(r#"<w:sz[^>]*w:val="(\d+)""#).unwrap();
+
+    let mut styles = HashMap::new();
+    for cap in style_re.captures_iter(styles_xml) {
+        let style_id = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
+        let style_body = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+        let ppr_xml = ppr_re
+            .captures(style_body)
+            .and_then(|c| c.get(1).map(|m| m.as_str()))
+            .unwrap_or("");
+        let rpr_xml = rpr_re
+            .captures(style_body)
+            .and_then(|c| c.get(1).map(|m| m.as_str()))
+            .unwrap_or("");
+
+        let align = align_re
+            .captures(ppr_xml)
+            .and_then(|c| c.get(1).map(|m| m.as_str().to_string()));
+        let size = sz_re
+            .captures(rpr_xml)
+            .and_then(|c| c.get(1))
+            .and_then(|m| m.as_str().parse::<u32>().ok())
+            .map(|v| (v as f32) / 2.0);
+        let bold = rpr_xml.contains("<w:b")
+            && !rpr_xml.contains("w:val=\"0\"")
+            && !rpr_xml.contains("w:val=\"false\"");
+        let italic = rpr_xml.contains("<w:i")
+            && !rpr_xml.contains("w:val=\"0\"")
+            && !rpr_xml.contains("w:val=\"false\"");
+        let underline = rpr_xml.contains("<w:u")
+            && !rpr_xml.contains("w:val=\"none\"");
+
+        styles.insert(
+            style_id,
+            StyleInfo {
+                align,
+                size,
+                bold,
+                italic,
+                underline,
+            },
+        );
+    }
+
+    styles
+}
+
+fn docx_xml_to_html(xml: &str, styles: Option<&HashMap<String, StyleInfo>>) -> String {
+    let para_re = Regex::new(r"(?s)<w:p[^>]*>(.*?)</w:p>").unwrap();
+    let ppr_re = Regex::new(r"(?s)<w:pPr[^>]*>(.*?)</w:pPr>").unwrap();
+    let pstyle_re = Regex::new(r#"<w:pStyle[^>]*w:val="([^"]+)""#).unwrap();
+    let align_re = Regex::new(r#"<w:jc[^>]*w:val="([^"]+)""#).unwrap();
+    let run_re = Regex::new(r"(?s)<w:r[^>]*>(.*?)</w:r>").unwrap();
+    let rpr_re = Regex::new(r"(?s)<w:rPr[^>]*>(.*?)</w:rPr>").unwrap();
+    let sz_re = Regex::new(r#"<w:sz[^>]*w:val="(\d+)""#).unwrap();
+    let br_re = Regex::new(r"<w:(br|cr)\\s*/>").unwrap();
+    let tag_re = Regex::new(r"<[^>]+>").unwrap();
+
+    let mut parts = Vec::new();
+
+    for cap in para_re.captures_iter(xml) {
+        let para_xml = cap.get(1).map(|m| m.as_str()).unwrap_or("");
+        let ppr_xml = ppr_re
+            .captures(para_xml)
+            .and_then(|c| c.get(1).map(|m| m.as_str()))
+            .unwrap_or("");
+
+        let style_id = pstyle_re
+            .captures(ppr_xml)
+            .and_then(|c| c.get(1).map(|m| m.as_str().to_string()));
+        let style_info = style_id
+            .as_ref()
+            .and_then(|id| styles.and_then(|map| map.get(id)));
+
+        let align = align_re
+            .captures(ppr_xml)
+            .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
+            .or_else(|| style_info.and_then(|info| info.align.clone()))
+            .unwrap_or_else(|| "left".to_string());
+        let align_css = match align {
+            ref v if v == "both" => "justify",
+            ref v if v == "center" => "center",
+            ref v if v == "right" => "right",
+            _ => "left",
+        };
+
+        let p_size = sz_re
+            .captures(ppr_xml)
+            .and_then(|c| c.get(1))
+            .and_then(|m| m.as_str().parse::<u32>().ok())
+            .map(|v| (v as f32) / 2.0)
+            .or_else(|| style_info.and_then(|info| info.size));
+
+        let mut run_html = String::new();
+        for run_cap in run_re.captures_iter(para_xml) {
+            let run_xml = run_cap.get(1).map(|m| m.as_str()).unwrap_or("");
+            let rpr_xml = rpr_re
+                .captures(run_xml)
+                .and_then(|c| c.get(1).map(|m| m.as_str()))
+                .unwrap_or("");
+
+            let bold = rpr_xml.contains("<w:b")
+                && !rpr_xml.contains("w:val=\"0\"")
+                && !rpr_xml.contains("w:val=\"false\"");
+            let italic = rpr_xml.contains("<w:i")
+                && !rpr_xml.contains("w:val=\"0\"")
+                && !rpr_xml.contains("w:val=\"false\"");
+            let underline = rpr_xml.contains("<w:u")
+                && !rpr_xml.contains("w:val=\"none\"");
+            let size = sz_re
+                .captures(rpr_xml)
+                .and_then(|c| c.get(1))
+                .and_then(|m| m.as_str().parse::<u32>().ok())
+                .map(|v| (v as f32) / 2.0);
+
+            let mut text = run_xml.replace("<w:tab/>", "\t").replace("<w:tab />", "\t");
+            text = br_re.replace_all(&text, "\n").to_string();
+            text = tag_re.replace_all(&text, "").to_string();
+            let decoded = decode_xml_entities(&text);
+            let trimmed = decoded.trim_end_matches('\r');
+            if trimmed.trim().is_empty() {
+                continue;
+            }
+
+            let mut escaped = escape_html(trimmed).replace('\n', "<br/>");
+            escaped = escaped.replace('\t', "&emsp;");
+
+            let mut styles: Vec<String> = Vec::new();
+            if bold {
+                styles.push("font-weight: 700".to_string());
+            }
+            if italic {
+                styles.push("font-style: italic".to_string());
+            }
+            if underline {
+                styles.push("text-decoration: underline".to_string());
+            }
+            if let Some(sz) = size {
+                styles.push(format!("font-size: {}pt", sz));
+            }
+
+            if styles.is_empty() {
+                run_html.push_str(&escaped);
+            } else {
+                run_html.push_str(&format!(
+                    "<span style=\"{}\">{}</span>",
+                    styles.join("; "),
+                    escaped
+                ));
+            }
+        }
+
+        let trimmed = run_html.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let mut p_styles: Vec<String> = Vec::new();
+        if align_css != "left" {
+            p_styles.push(format!("text-align: {}", align_css));
+        }
+        if let Some(sz) = p_size {
+            p_styles.push(format!("font-size: {}pt", sz));
+        }
+        if let Some(info) = style_info {
+            if info.bold {
+                p_styles.push("font-weight: 700".to_string());
+            }
+            if info.italic {
+                p_styles.push("font-style: italic".to_string());
+            }
+            if info.underline {
+                p_styles.push("text-decoration: underline".to_string());
+            }
+        }
+
+        if p_styles.is_empty() {
+            parts.push(format!("<p>{}</p>", trimmed));
+        } else {
+            parts.push(format!(
+                "<p style=\"{}\">{}</p>",
+                p_styles.join("; "),
+                trimmed
+            ));
+        }
+    }
+
+    parts.join("\n")
+}
+
 fn resolve_referti_dir(settings: &AppSettings, kind: &str, app_handle: &AppHandle) -> PathBuf {
     let mut out_dir = if kind == "amb" {
         settings
@@ -155,6 +378,20 @@ fn resolve_referti_dir(settings: &AppSettings, kind: &str, app_handle: &AppHandl
     };
     let _ = std::fs::create_dir_all(&out_dir);
     out_dir
+}
+
+fn resolve_moduli_temp_dir() -> PathBuf {
+    let mut out_dir = std::env::temp_dir();
+    out_dir.push("tavi_moduli");
+    let _ = std::fs::create_dir_all(&out_dir);
+    out_dir
+}
+
+fn schedule_temp_cleanup(path: PathBuf) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(600));
+        let _ = std::fs::remove_file(&path);
+    });
 }
 
 #[tauri::command]
@@ -800,4 +1037,203 @@ pub async fn generate_scheda_procedurale_referto(
     Ok(out_path
         .to_string_lossy()
         .to_string())
+}
+
+#[tauri::command]
+pub async fn generate_consenso_informato(
+    patient_id: i64,
+    db: State<'_, Database>,
+    app_handle: AppHandle,
+) -> Result<String, String> {
+    let patient = db
+        .get_patient_by_id(patient_id)?
+        .ok_or_else(|| "Paziente non trovato".to_string())?;
+    let p = patient.patient;
+
+    let template_path = resolve_template_path(&app_handle, "consenso_informato_TAVI.docx")?;
+    let replacements: HashMap<&str, String> = HashMap::from([
+        ("nome", p.nome.clone()),
+        ("cognome", p.cognome.clone()),
+    ]);
+
+    let mut template_file =
+        File::open(&template_path).map_err(|_| "Impossibile aprire il template".to_string())?;
+    let mut archive =
+        ZipArchive::new(&mut template_file).map_err(|_| "Template referto non valido".to_string())?;
+
+    let mut output_bytes: Vec<u8> = Vec::new();
+    {
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(&mut output_bytes));
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).map_err(|_| "Errore lettura template".to_string())?;
+            let name = file.name().to_string();
+
+            if file.is_dir() {
+                writer
+                    .add_directory(name, FileOptions::default())
+                    .map_err(|_| "Errore scrittura referto".to_string())?;
+                continue;
+            }
+
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer)
+                .map_err(|_| "Errore lettura template".to_string())?;
+
+            let options = FileOptions::default().compression_method(file.compression());
+
+            if name.ends_with(".xml") {
+                let content = String::from_utf8_lossy(&buffer).to_string();
+                let replaced = replace_placeholders(&content, &replacements);
+                writer
+                    .start_file(name.clone(), options)
+                    .map_err(|_| "Errore scrittura referto".to_string())?;
+                writer
+                    .write_all(replaced.as_bytes())
+                    .map_err(|_| "Errore scrittura referto".to_string())?;
+            } else {
+                writer
+                    .start_file(name.clone(), options)
+                    .map_err(|_| "Errore scrittura referto".to_string())?;
+                writer
+                    .write_all(&buffer)
+                    .map_err(|_| "Errore scrittura referto".to_string())?;
+            }
+        }
+        writer.finish().map_err(|_| "Errore finale referto".to_string())?;
+    }
+
+    let mut out_dir = resolve_moduli_temp_dir();
+    create_dir_all(&out_dir).map_err(|_| "Impossibile creare cartella moduli".to_string())?;
+
+    let filename = sanitize_filename(&format!(
+        "Consenso informato - {} {}.docx",
+        p.cognome, p.nome
+    ));
+    let out_path = out_dir.join(filename);
+
+    let mut out_file =
+        File::create(&out_path).map_err(|_| "Impossibile creare il referto".to_string())?;
+    out_file
+        .write_all(&output_bytes)
+        .map_err(|_| "Errore salvataggio referto".to_string())?;
+
+    schedule_temp_cleanup(out_path.clone());
+    Ok(out_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn generate_consenso_informato_html(
+    patient_id: i64,
+    db: State<'_, Database>,
+    app_handle: AppHandle,
+) -> Result<String, String> {
+    let patient = db
+        .get_patient_by_id(patient_id)?
+        .ok_or_else(|| "Paziente non trovato".to_string())?;
+    let p = patient.patient;
+
+    let template_path = resolve_template_path(&app_handle, "consenso_informato_TAVI.docx")?;
+    let replacements: HashMap<&str, String> = HashMap::from([
+        ("nome", p.nome.clone()),
+        ("cognome", p.cognome.clone()),
+    ]);
+
+    let mut template_file =
+        File::open(&template_path).map_err(|_| "Impossibile aprire il template".to_string())?;
+    let mut archive =
+        ZipArchive::new(&mut template_file).map_err(|_| "Template referto non valido".to_string())?;
+
+    let mut document_xml = String::new();
+    let mut styles_xml = String::new();
+    {
+        let mut doc_file = archive
+            .by_name("word/document.xml")
+            .map_err(|_| "Template referto non valido".to_string())?;
+        doc_file
+            .read_to_string(&mut document_xml)
+            .map_err(|_| "Errore lettura template".to_string())?;
+    }
+    if let Ok(mut styles_file) = archive.by_name("word/styles.xml") {
+        let _ = styles_file.read_to_string(&mut styles_xml);
+    }
+
+    let replaced = replace_placeholders(&document_xml, &replacements);
+    let styles_map = if styles_xml.is_empty() {
+        HashMap::new()
+    } else {
+        parse_styles(&styles_xml)
+    };
+    let html = docx_xml_to_html(&replaced, Some(&styles_map));
+    if html.trim().is_empty() {
+        return Err("Contenuto consenso vuoto".to_string());
+    }
+    Ok(html)
+}
+
+#[tauri::command]
+pub async fn generate_esami_ematochimici(
+    patient_id: i64,
+    db: State<'_, Database>,
+    app_handle: AppHandle,
+) -> Result<String, String> {
+    let patient = db
+        .get_patient_by_id(patient_id)?
+        .ok_or_else(|| "Paziente non trovato".to_string())?;
+    let p = patient.patient;
+
+    let template_path = resolve_template_path(&app_handle, "ee_tavi.pdf")?;
+    let mut out_dir = resolve_moduli_temp_dir();
+    create_dir_all(&out_dir).map_err(|_| "Impossibile creare cartella moduli".to_string())?;
+
+    let filename = sanitize_filename(&format!(
+        "Esami ematochimici - {} {}.pdf",
+        p.cognome, p.nome
+    ));
+    let out_path = out_dir.join(filename);
+    std::fs::copy(&template_path, &out_path).map_err(|_| "Impossibile copiare il modulo".to_string())?;
+
+    schedule_temp_cleanup(out_path.clone());
+    Ok(out_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn print_file(path: String) -> Result<(), String> {
+    if path.trim().is_empty() {
+        return Err("Percorso file non valido".to_string());
+    }
+    let target = PathBuf::from(&path);
+    if !target.exists() {
+        return Err("File non trovato".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let escaped = path.replace('\\', "\\\\").replace('"', "\\\"");
+        let status = Command::new("osascript")
+            .arg("-e")
+            .arg(format!("set theFile to POSIX file \"{}\"", escaped))
+            .arg("-e")
+            .arg("tell application \"Finder\" to open theFile")
+            .arg("-e")
+            .arg("delay 1.2")
+            .arg("-e")
+            .arg("tell application \"System Events\" to keystroke \"p\" using command down")
+            .status()
+            .map_err(|e| e.to_string())?;
+
+        if !status.success() {
+            return Err("Errore apertura stampa".to_string());
+        }
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Stampa con dialogo supportata solo su macOS".to_string())
+    }
+}
+
+#[tauri::command]
+pub fn print_window(window: Window) -> Result<(), String> {
+    window.print().map_err(|e| e.to_string())
 }
