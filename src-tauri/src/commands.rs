@@ -355,7 +355,7 @@ fn docx_xml_to_html(xml: &str, styles: Option<&HashMap<String, StyleInfo>>) -> S
 }
 
 fn resolve_referti_dir(settings: &AppSettings, kind: &str, app_handle: &AppHandle) -> PathBuf {
-    let mut out_dir = if kind == "amb" {
+    let out_dir = if kind == "amb" {
         settings
             .referti_amb_path
             .as_ref()
@@ -839,7 +839,7 @@ pub async fn generate_ambulatorio_referto(
     }
 
     let settings = read_settings_from_disk().unwrap_or_default();
-    let mut out_dir = resolve_referti_dir(&settings, "amb", &app_handle);
+    let out_dir = resolve_referti_dir(&settings, "amb", &app_handle);
     create_dir_all(&out_dir).map_err(|_| "Impossibile creare cartella referti".to_string())?;
 
     let filename = sanitize_filename(&format!("{} {}.docx", p.cognome, p.nome));
@@ -1022,7 +1022,7 @@ pub async fn generate_scheda_procedurale_referto(
     }
 
     let settings = read_settings_from_disk().unwrap_or_default();
-    let mut out_dir = resolve_referti_dir(&settings, "proc", &app_handle);
+    let out_dir = resolve_referti_dir(&settings, "proc", &app_handle);
     create_dir_all(&out_dir).map_err(|_| "Impossibile creare cartella referti".to_string())?;
 
     let filename = sanitize_filename(&format!("Scheda procedurale - {} {}.docx", p.cognome, p.nome));
@@ -1102,7 +1102,7 @@ pub async fn generate_consenso_informato(
         writer.finish().map_err(|_| "Errore finale referto".to_string())?;
     }
 
-    let mut out_dir = resolve_moduli_temp_dir();
+    let out_dir = resolve_moduli_temp_dir();
     create_dir_all(&out_dir).map_err(|_| "Impossibile creare cartella moduli".to_string())?;
 
     let filename = sanitize_filename(&format!(
@@ -1182,7 +1182,7 @@ pub async fn generate_esami_ematochimici(
     let p = patient.patient;
 
     let template_path = resolve_template_path(&app_handle, "ee_tavi.pdf")?;
-    let mut out_dir = resolve_moduli_temp_dir();
+    let out_dir = resolve_moduli_temp_dir();
     create_dir_all(&out_dir).map_err(|_| "Impossibile creare cartella moduli".to_string())?;
 
     let filename = sanitize_filename(&format!(

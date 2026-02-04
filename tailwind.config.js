@@ -20,8 +20,11 @@ export default {
         success: '#34D399',    // Green 400
         error: '#F87171',      // Red 400
         warning: '#FBBF24',    // Amber 400
-        background: '#F3F4F6', // Gray 100 - leggermente più scuro
-        surface: '#FFFFFF',    // White
+        background: '#F5F7FA', // BG-0
+        surface: '#FFFFFF',    // BG-1
+        'surface-muted': '#F0F3F7', // BG-2
+        'surface-strong': '#E6EBF2', // BG-3
+        'surface-stronger': '#DCE3EC', // BG-4
         textPrimary: '#111827',   // Gray 900
         textSecondary: '#6B7280', // Gray 500
       },

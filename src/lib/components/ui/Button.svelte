@@ -11,8 +11,8 @@
 
   const variantClasses = {
     primary: 'border border-primary text-primary bg-transparent hover:bg-primary/5 focus:ring-primary/30',
-    secondary: 'bg-white border border-gray-200 text-textPrimary hover:bg-gray-50 focus:ring-primary/20',
-    text: 'text-textPrimary hover:bg-gray-50 focus:ring-primary/20',
+    secondary: 'bg-surface border border-gray-200 text-textPrimary hover:bg-surface-stronger focus:ring-primary/20',
+    text: 'text-textPrimary hover:bg-surface-stronger focus:ring-primary/20',
     danger: 'bg-transparent border border-error text-error hover:bg-red-50 focus:ring-error/30',
   };
 

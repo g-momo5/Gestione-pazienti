@@ -90,6 +90,7 @@ impl Database {
                 sesso TEXT,
                 altezza REAL,
                 peso REAL,
+                note TEXT,
                 ambulatorio_fattori TEXT,
                 anamnesi_cardiologica TEXT,
                 apr TEXT,
@@ -103,6 +104,7 @@ impl Database {
                 procedurale_egfr TEXT,
                 procedurale_hb TEXT,
                 procedurale_altro TEXT,
+                data_tavi TEXT,
                 procedurale_ecg_ritmo_sinusale INTEGER,
                 procedurale_ecg_fa INTEGER,
                 procedurale_ecg_bbs INTEGER,
@@ -134,6 +136,7 @@ impl Database {
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN sesso TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN altezza REAL", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN peso REAL", []);
+        let _ = conn.execute("ALTER TABLE patients ADD COLUMN note TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN ambulatorio_fattori TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN anamnesi_cardiologica TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN apr TEXT", []);
@@ -147,6 +150,7 @@ impl Database {
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN procedurale_egfr TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN procedurale_hb TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN procedurale_altro TEXT", []);
+        let _ = conn.execute("ALTER TABLE patients ADD COLUMN data_tavi TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN procedurale_ecg_ritmo_sinusale INTEGER", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN procedurale_ecg_fa INTEGER", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN procedurale_ecg_bbs INTEGER", []);
@@ -568,18 +572,18 @@ impl Database {
 
         let result = conn.execute(
             "INSERT INTO patients (
-                nome, cognome, data_nascita, luogo_nascita, codice_fiscale, telefono, email, provenienza, sesso, altezza, peso,
+                nome, cognome, data_nascita, luogo_nascita, codice_fiscale, telefono, email, provenienza, sesso, altezza, peso, note,
                 ambulatorio_fattori, anamnesi_cardiologica, apr, visita_odierna, conclusioni, medico_titolo, medico_nome,
-                procedurale_allergia_mdc, procedurale_preparazione_mdc, procedurale_creatinina, procedurale_egfr, procedurale_hb, procedurale_altro,
+                procedurale_allergia_mdc, procedurale_preparazione_mdc, procedurale_creatinina, procedurale_egfr, procedurale_hb, procedurale_altro, data_tavi,
                 procedurale_ecg_ritmo_sinusale, procedurale_ecg_fa, procedurale_ecg_bbs, procedurale_ecg_bbd, procedurale_ecg_eas, procedurale_ecg_bav_primo, procedurale_ecg_ritmo_stimolato,
                 procedurale_anestesia, procedurale_coronarografia, procedurale_coronarografia_note, procedurale_pacemaker, procedurale_pacemaker_note,
                 procedurale_accesso_principale_fem, procedurale_accesso_principale_altro, procedurale_accesso_protezione, procedurale_accesso_protezione_note,
                 procedurale_altri_accessi, procedurale_diametro_pallone_femorale, procedurale_guida_safari, procedurale_protezione_osti,
                 procedurale_valvuloplastica, procedurale_valvuloplastica_note, procedurale_bioprotesi_modello, procedurale_bioprotesi_dimensione
             )
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18,
-                     ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31,
-                     ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48)",
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
+                     ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33,
+                     ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50)",
             params![
                 patient.nome,
                 patient.cognome,
@@ -592,6 +596,7 @@ impl Database {
                 patient.sesso,
                 patient.altezza,
                 patient.peso,
+                patient.note,
                 fattori_json,
                 patient.anamnesi_cardiologica,
                 patient.apr,
@@ -605,6 +610,7 @@ impl Database {
                 patient.procedurale_egfr,
                 patient.procedurale_hb,
                 patient.procedurale_altro,
+                patient.data_tavi,
                 patient.procedurale_ecg_ritmo_sinusale,
                 patient.procedurale_ecg_fa,
                 patient.procedurale_ecg_bbs,
@@ -669,23 +675,24 @@ impl Database {
                 nome = ?1, cognome = ?2, data_nascita = ?3,
                 luogo_nascita = ?4, codice_fiscale = ?5, telefono = ?6,
                 email = ?7, provenienza = ?8, sesso = ?9, altezza = ?10, peso = ?11,
-                ambulatorio_fattori = ?12, anamnesi_cardiologica = ?13, apr = ?14,
-                visita_odierna = ?15, conclusioni = ?16, medico_titolo = ?17, medico_nome = ?18,
-                procedurale_allergia_mdc = ?19, procedurale_preparazione_mdc = ?20, procedurale_creatinina = ?21,
-                procedurale_egfr = ?22, procedurale_hb = ?23, procedurale_altro = ?24,
-                procedurale_ecg_ritmo_sinusale = ?25, procedurale_ecg_fa = ?26, procedurale_ecg_bbs = ?27,
-                procedurale_ecg_bbd = ?28, procedurale_ecg_eas = ?29, procedurale_ecg_bav_primo = ?30,
-                procedurale_ecg_ritmo_stimolato = ?31,
-                procedurale_anestesia = ?32, procedurale_coronarografia = ?33, procedurale_coronarografia_note = ?34,
-                procedurale_pacemaker = ?35, procedurale_pacemaker_note = ?36,
-                procedurale_accesso_principale_fem = ?37, procedurale_accesso_principale_altro = ?38,
-                procedurale_accesso_protezione = ?39, procedurale_accesso_protezione_note = ?40,
-                procedurale_altri_accessi = ?41, procedurale_diametro_pallone_femorale = ?42,
-                procedurale_guida_safari = ?43, procedurale_protezione_osti = ?44,
-                procedurale_valvuloplastica = ?45, procedurale_valvuloplastica_note = ?46,
-                procedurale_bioprotesi_modello = ?47, procedurale_bioprotesi_dimensione = ?48,
+                note = ?12,
+                ambulatorio_fattori = ?13, anamnesi_cardiologica = ?14, apr = ?15,
+                visita_odierna = ?16, conclusioni = ?17, medico_titolo = ?18, medico_nome = ?19,
+                procedurale_allergia_mdc = ?20, procedurale_preparazione_mdc = ?21, procedurale_creatinina = ?22,
+                procedurale_egfr = ?23, procedurale_hb = ?24, procedurale_altro = ?25, data_tavi = ?26,
+                procedurale_ecg_ritmo_sinusale = ?27, procedurale_ecg_fa = ?28, procedurale_ecg_bbs = ?29,
+                procedurale_ecg_bbd = ?30, procedurale_ecg_eas = ?31, procedurale_ecg_bav_primo = ?32,
+                procedurale_ecg_ritmo_stimolato = ?33,
+                procedurale_anestesia = ?34, procedurale_coronarografia = ?35, procedurale_coronarografia_note = ?36,
+                procedurale_pacemaker = ?37, procedurale_pacemaker_note = ?38,
+                procedurale_accesso_principale_fem = ?39, procedurale_accesso_principale_altro = ?40,
+                procedurale_accesso_protezione = ?41, procedurale_accesso_protezione_note = ?42,
+                procedurale_altri_accessi = ?43, procedurale_diametro_pallone_femorale = ?44,
+                procedurale_guida_safari = ?45, procedurale_protezione_osti = ?46,
+                procedurale_valvuloplastica = ?47, procedurale_valvuloplastica_note = ?48,
+                procedurale_bioprotesi_modello = ?49, procedurale_bioprotesi_dimensione = ?50,
                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?49",
+             WHERE id = ?51",
             params![
                 patient.nome,
                 patient.cognome,
@@ -698,6 +705,7 @@ impl Database {
                 patient.sesso,
                 patient.altezza,
                 patient.peso,
+                patient.note,
                 fattori_json,
                 patient.anamnesi_cardiologica,
                 patient.apr,
@@ -711,6 +719,7 @@ impl Database {
                 patient.procedurale_egfr,
                 patient.procedurale_hb,
                 patient.procedurale_altro,
+                patient.data_tavi,
                 patient.procedurale_ecg_ritmo_sinusale,
                 patient.procedurale_ecg_fa,
                 patient.procedurale_ecg_bbs,
@@ -820,6 +829,7 @@ impl Database {
                     sesso: row.get("sesso").ok(),
                     altezza: row.get("altezza").ok(),
                     peso: row.get("peso").ok(),
+                    note: row.get("note").ok(),
                     ambulatorio_fattori: fattori,
                     anamnesi_cardiologica: row.get("anamnesi_cardiologica").ok(),
                     apr: row.get("apr").ok(),
@@ -833,6 +843,7 @@ impl Database {
                     procedurale_egfr: row.get("procedurale_egfr").ok(),
                     procedurale_hb: row.get("procedurale_hb").ok(),
                     procedurale_altro: row.get("procedurale_altro").ok(),
+                    data_tavi: row.get("data_tavi").ok(),
                     procedurale_ecg_ritmo_sinusale: row.get("procedurale_ecg_ritmo_sinusale").ok(),
                     procedurale_ecg_fa: row.get("procedurale_ecg_fa").ok(),
                     procedurale_ecg_bbs: row.get("procedurale_ecg_bbs").ok(),

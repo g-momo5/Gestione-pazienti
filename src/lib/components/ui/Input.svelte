@@ -4,6 +4,7 @@
   const dispatch = createEventDispatcher();
 
   export let label = '';
+  export let id = '';
   export let value = '';
   export let type = 'text';
   export let placeholder = '';
@@ -13,6 +14,9 @@
   export let min = null;
   export let max = null;
   export let step = null;
+
+  const fallbackId = `input-${Math.random().toString(36).slice(2, 9)}`;
+  $: inputId = id || fallbackId;
 
   const handleInput = (e) => {
     value = e.target.value;
@@ -30,7 +34,7 @@
 
 <div class="w-full">
   {#if label}
-    <label class="block text-sm font-semibold text-textPrimary mb-1">
+    <label class="block text-sm font-semibold text-textPrimary mb-1" for={inputId}>
       {label}
       {#if required}
         <span class="text-error">*</span>
@@ -39,6 +43,7 @@
   {/if}
 
   <input
+    id={inputId}
     {type}
     {placeholder}
     {required}
@@ -55,7 +60,7 @@
            {error
              ? 'border-error focus:ring-error/30'
              : 'border-gray-200 focus:ring-primary/20 focus:border-primary'}
-           {disabled ? 'bg-gray-50 cursor-not-allowed text-textSecondary' : 'bg-white'}"
+           {disabled ? 'bg-surface-strong cursor-not-allowed text-textSecondary' : 'bg-surface'}"
   />
 
   {#if error}

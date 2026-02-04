@@ -15,7 +15,7 @@
 
 <div
   class="flex items-center gap-3 mb-4 pb-2 border-b-2 border-primary/20
-         {collapsible ? 'cursor-pointer hover:bg-gray-50 -mx-2 px-2 py-2 rounded-lg' : ''}"
+         {collapsible ? 'cursor-pointer hover:bg-surface-stronger -mx-2 px-2 py-2 rounded-lg' : ''}"
   on:click={toggleCollapse}
   on:keydown={(e) => e.key === 'Enter' && toggleCollapse()}
   role={collapsible ? 'button' : undefined}

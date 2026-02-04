@@ -22,6 +22,7 @@
   import pdfWorker from 'pdfjs-dist/legacy/build/pdf.worker?url';
 
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+  const todayIso = new Date().toISOString().split('T')[0];
 
   export let patient = null;
   export let loading = false;
@@ -34,6 +35,7 @@
     { value: 'Non candidabile a TAVI', label: 'Non candidabile a TAVI' },
     { value: 'TAVI eseguita', label: 'TAVI eseguita' },
   ];
+  const ELIGIBLE_TAVI_STATUSES = ['In attesa di TAVI', 'TAVI eseguita'];
 
   const ECG_OPTIONS = [
     { id: 'ecgRitmoSinusale', label: 'Ritmo sinusale' },
@@ -130,6 +132,8 @@
   let checklistState = {};
   let lastLoadedChecklistId = null;
   let patientAge = null;
+  let taviDate = '';
+  let savingTaviDate = false;
   let anagraficaForm = {
     nome: '',
     cognome: '',
@@ -197,6 +201,7 @@
   let generatingConsenso = false;
   let generatingEsami = false;
   let showPrintPreview = false;
+  let silentPrintMode = false;
   let printMode = 'html';
   let printTitle = '';
   let printHtml = '';
@@ -346,20 +351,32 @@
     return { done, total, percent };
   }
 
+  const getPlaceLabel = (item) => {
+    if (typeof item === 'string') return item;
+    return item?.nome || item?.name || item?.label || '';
+  };
+
+  const getPlaceCode = (item) => {
+    if (typeof item !== 'object' || item === null) return null;
+    return item.codice_catastale || item.codice || null;
+  };
+
+  const findPlaceCode = (value) => {
+    if (!value || !value.trim()) return '';
+    const q = value.trim().toLowerCase();
+    const base = [...(placeData.comuni || []), ...(placeData.stati || [])];
+    const match = base.find((item) => getPlaceLabel(item).trim().toLowerCase() === q);
+    return match ? getPlaceCode(match) || '' : '';
+  };
+
   const filterPlaces = (value) => {
     if (!value || value.trim().length < 2) return [];
     const q = value.trim().toLowerCase();
     const base = [...(placeData.comuni || []), ...(placeData.stati || [])];
     return base
       .map(item => {
-        const label =
-          typeof item === 'string'
-            ? item
-            : item.nome || item.name || item.label || '';
-        const codice =
-          typeof item === 'object'
-            ? item.codice_catastale || item.codice || null
-            : null;
+        const label = getPlaceLabel(item);
+        const codice = getPlaceCode(item);
         return { label, codice };
       })
       .filter(item => item.label.toLowerCase().includes(q))
@@ -381,6 +398,7 @@
   );
   $: bmiCategory = categorizeBMI(bmiValue);
   $: bioprotesiSizeOptions = getValveSizes(schedaProceduraleForm.bioprotesiModello);
+  $: eligibleForTavi = ELIGIBLE_TAVI_STATUSES.includes(statusSelection || patient?.status || '');
 
   async function handleStatusChange() {
     if (!patient?.patient?.id) return;
@@ -396,6 +414,37 @@
       showToast('Errore durante l\'aggiornamento dello stato', 'error');
     } finally {
       savingStatus = false;
+    }
+  }
+
+  const isValidISODate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+  async function saveTaviDate() {
+    if (!patient?.patient?.id) return;
+    if (!eligibleForTavi) {
+      showToast('La data TAVI è disponibile solo per pazienti eleggibili', 'warning');
+      return;
+    }
+    if (taviDate && !isValidISODate(taviDate)) {
+      showToast('Inserisci una data TAVI valida (YYYY-MM-DD)', 'warning');
+      return;
+    }
+
+    savingTaviDate = true;
+    const payload = {
+      ...patient.patient,
+      data_tavi: taviDate || null,
+    };
+
+    try {
+      await updatePatient(payload);
+      await loadPatient(patient.patient.id);
+      showToast('Data TAVI aggiornata', 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Errore durante il salvataggio della data TAVI', 'error');
+    } finally {
+      savingTaviDate = false;
     }
   }
 
@@ -466,6 +515,21 @@
       if (i === 1 || i === 3) out += '/';
     }
     return out;
+  }
+
+  function formatDisplayFromIso(value) {
+    if (!value) return '';
+    const clean = String(value).split('T')[0];
+    const parts = clean.split('-');
+    if (parts.length === 3 && parts[0].length === 4) {
+      const [year, month, day] = parts;
+      return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
+    }
+    const digits = clean.replace(/\D/g, '');
+    if (digits.length === 8 && Number(digits.slice(0, 4)) > 31) {
+      return `${digits.slice(6, 8)}/${digits.slice(4, 6)}/${digits.slice(0, 4)}`;
+    }
+    return formatDisplayFromDigits(digits);
   }
 
   function digitsToIsoAndError(digits) {
@@ -550,6 +614,7 @@
   }
 
   function updatePatientCF() {
+    anagraficaForm.luogo_nascita_codice = findPlaceCode(anagraficaForm.luogo_nascita);
     const cf = calcCodiceFiscale(anagraficaForm);
     if (cf) {
       anagraficaForm.codice_fiscale = cf;
@@ -784,16 +849,24 @@
     if (!patient?.patient?.id) return;
     generatingConsenso = true;
     try {
-      const result = await invoke('generate_consenso_informato', {
+      const docxResult = await invoke('generate_consenso_informato', {
         patientId: patient.patient.id
       });
-      const path = typeof result === 'string' ? result : '';
-      if (path) {
-        showToast('Apro la schermata di stampa del consenso informato...', 'info');
-        await openPrintPreview({
-          title: 'Consenso informato',
-          docxPath: path
-        });
+      const docxPath = typeof docxResult === 'string' ? docxResult : '';
+
+      if (docxPath) {
+        showToast('Invio il consenso informato alla stampante...', 'info');
+        try {
+          await invoke('print_file', { path: docxPath });
+          showToast('Stampa del consenso avviata', 'success');
+        } catch (printErr) {
+          console.error('Errore stampa diretta consenso', printErr);
+          showToast('Stampa diretta non riuscita, apro anteprima...', 'warning');
+          await openPrintPreview({
+            title: 'Consenso informato',
+            docxPath
+          });
+        }
       } else {
         showToast('Consenso informato generato', 'success');
       }
@@ -815,25 +888,34 @@
       });
       const path = typeof result === 'string' ? result : '';
       if (path) {
-        showToast('Apro la schermata di stampa degli esami ematochimici...', 'info');
-        await openPrintPreview({
-          title: 'Esami ematochimici',
-          pdfPath: path
-        });
+        showToast('Invio la lista esami alla stampante...', 'info');
+        try {
+          await invoke('print_file', { path });
+          showToast('Stampa della lista esami avviata', 'success');
+        } catch (printErr) {
+          console.error('Errore stampa diretta lista esami', printErr);
+          showToast('Stampa diretta non riuscita, apro anteprima...', 'warning');
+          await openPrintPreview({
+            title: 'Lista esami',
+            pdfPath: path
+          });
+        }
       } else {
-        showToast('Modulo esami ematochimici generato', 'success');
+        showToast('Lista esami generata', 'success');
       }
     } catch (e) {
       console.error('Errore esami ematochimici', e);
-      const msg = typeof e === 'string' ? e : e?.message || 'Errore durante la generazione del modulo ematochimici';
+      const msg = typeof e === 'string' ? e : e?.message || 'Errore durante la generazione della lista esami';
       showToast(msg, 'error');
     } finally {
       generatingEsami = false;
     }
   }
 
-  async function openPrintPreview({ title, html, pdfPath, docxPath }) {
+  async function openPrintPreview({ title, html, pdfPath, docxPath, skipPreview = false }) {
     printTitle = title || 'Anteprima stampa';
+    silentPrintMode = skipPreview;
+    showPrintPreview = !skipPreview;
     if (docxPath) {
       printMode = 'docx';
       printDocxPath = docxPath;
@@ -852,28 +934,29 @@
       printDocxPath = '';
       printHtml = '';
     }
-    showPrintPreview = true;
     autoPrintPending = true;
     await tick();
     if (printMode === 'docx') {
       await renderDocxPreview();
-      if (autoPrintPending) {
-        autoPrintPending = false;
-        await triggerPrint();
-      }
     } else if (printMode === 'pdf') {
       await renderPdfPreview();
-      if (autoPrintPending) {
-        autoPrintPending = false;
-        await triggerPrint();
-      }
     } else if (printMode === 'html') {
       await triggerPrint();
       autoPrintPending = false;
     }
+
+    if (autoPrintPending) {
+      autoPrintPending = false;
+      await triggerPrint();
+    }
+
+    if (skipPreview) {
+      closePrintPreview();
+    }
   }
 
   function closePrintPreview() {
+    silentPrintMode = false;
     showPrintPreview = false;
     printHtml = '';
     printDocxPath = '';
@@ -1008,7 +1091,7 @@
       data_nascita: patient.patient.data_nascita || '',
       sesso: patient.patient.sesso || 'M',
       luogo_nascita: patient.patient.luogo_nascita || '',
-      luogo_nascita_codice: '',
+      luogo_nascita_codice: findPlaceCode(patient.patient.luogo_nascita || ''),
       codice_fiscale: patient.patient.codice_fiscale || '',
       telefono: patient.patient.telefono || '',
       email: patient.patient.email || '',
@@ -1027,7 +1110,8 @@
       medicoTitolo: patient.patient.medico_titolo || 'Dott.',
       medicoNome: patient.patient.medico_nome || '',
     };
-    anagraficaDateDisplay = formatDisplayFromDigits((patient.patient.data_nascita || '').replace(/-/g, ''));
+    taviDate = patient.patient.data_tavi || '';
+    anagraficaDateDisplay = formatDisplayFromIso(patient.patient.data_nascita || '');
     anagraficaDateError = '';
     lastLoadedChecklistId = patient.patient.id;
   }
@@ -1057,6 +1141,14 @@
   <div class="space-y-6">
     <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
       <div class="flex items-start gap-3">
+        <button
+          type="button"
+          on:click={onBack}
+          class="w-9 h-9 rounded-full border border-gray-200 bg-surface text-textPrimary hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1"
+          aria-label="Torna alla home"
+        >
+          ←
+        </button>
         <IconBadge icon="user" size="lg" tone="primary" class="mt-1" />
         <div>
           <p class="text-sm text-textSecondary">Paziente</p>
@@ -1090,7 +1182,7 @@
           disabled={generatingEsami}
           on:click={generateEsamiEmatochimici}
         >
-          {generatingEsami ? 'Generazione...' : 'Stampa esami ematochimici'}
+          {generatingEsami ? 'Generazione...' : 'Stampa lista esami'}
         </Button>
       </div>
 
@@ -1109,6 +1201,23 @@
         >
           {savingStatus ? 'Aggiornamento...' : 'Salva nuovo stato'}
         </Button>
+        {#if eligibleForTavi}
+          <Input
+            type="date"
+            label="Data TAVI programmata"
+            bind:value={taviDate}
+            max={todayIso}
+          />
+          <Button
+            variant="secondary"
+            fullWidth
+            size="sm"
+            disabled={savingTaviDate}
+            on:click={saveTaviDate}
+          >
+            {savingTaviDate ? 'Salvataggio...' : 'Salva data TAVI'}
+          </Button>
+        {/if}
         <p class="text-xs text-textSecondary">
           Ultimo aggiornamento: {formatDateIT(patient.status_created_at?.split(' ')[0])}
         </p>
@@ -1145,7 +1254,7 @@
                         <div
                           class="h-full bg-primary"
                           style={`width: ${progress.percent}%`}
-                        />
+                        ></div>
                       </div>
                     </div>
                   </div>
@@ -1198,10 +1307,11 @@
                 }}
               />
               <div>
-                <label class="block text-sm font-medium text-textPrimary mb-1">
+                <label class="block text-sm font-medium text-textPrimary mb-1" for="anagraficaDataNascita">
                   Data di nascita <span class="text-error">*</span>
                 </label>
                 <Input
+                  id="anagraficaDataNascita"
                   placeholder="gg/mm/aaaa"
                   bind:value={anagraficaDateDisplay}
                   on:input={(e) => handleDetailDateInput(e.detail?.target?.value || '')}
@@ -1220,11 +1330,11 @@
                   }}
                 />
                 {#if showLuogoSuggestions && filterPlaces(anagraficaForm.luogo_nascita).length}
-                  <div class="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  <div class="absolute z-30 mt-1 w-full bg-surface border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                     {#each filterPlaces(anagraficaForm.luogo_nascita) as suggestion}
                       <button
                         type="button"
-                        class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                        class="w-full text-left px-3 py-2 text-sm hover:bg-surface-stronger"
                         on:click={() => {
                           anagraficaForm.luogo_nascita = suggestion.label;
                           anagraficaForm.luogo_nascita_codice = suggestion.codice || '';
@@ -1276,11 +1386,11 @@
                   on:blur={() => setTimeout(() => (showProvSuggestions = false), 120)}
                 />
                 {#if showProvSuggestions && filterPlaces(anagraficaForm.provenienza).length}
-                  <div class="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  <div class="absolute z-30 mt-1 w-full bg-surface border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                     {#each filterPlaces(anagraficaForm.provenienza) as suggestion}
                       <button
                         type="button"
-                        class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                        class="w-full text-left px-3 py-2 text-sm hover:bg-surface-stronger"
                         on:click={() => {
                           anagraficaForm.provenienza = suggestion.label;
                           showProvSuggestions = false;
@@ -1319,7 +1429,7 @@
                 min="0"
                 bind:value={antropometricForm.peso}
               />
-              <div class="sm:col-span-2 flex items-center gap-3 p-3 rounded-lg bg-gray-50 text-sm">
+              <div class="sm:col-span-2 flex items-center gap-3 p-3 rounded-lg bg-surface-strong text-sm">
                 <IconBadge icon="heart" tone="secondary" />
                 <div class="flex flex-col gap-1">
                   <div class="flex items-center gap-2">
@@ -1348,8 +1458,9 @@
           <div class="space-y-4">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-medium text-textPrimary mb-1">Titolo medico</label>
+                <label class="block text-sm font-medium text-textPrimary mb-1" for="ambulatorioMedicoTitolo">Titolo medico</label>
                 <select
+                  id="ambulatorioMedicoTitolo"
                   class="w-full px-3 py-2 border rounded-lg border-gray-200 focus:ring-primary/20 focus:border-primary"
                   bind:value={ambulatorioForm.medicoTitolo}
                 >
@@ -1493,7 +1604,7 @@
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-semibold text-textPrimary mb-1">Pacemaker definitivo</label>
+                <p class="block text-sm font-semibold text-textPrimary mb-1">Pacemaker definitivo</p>
                 <div class="flex flex-col gap-2">
                   <label class="inline-flex items-center gap-2 text-sm text-textPrimary">
                     <Checkbox
@@ -1576,7 +1687,7 @@
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-semibold text-textPrimary mb-1">Accesso arterioso di protezione</label>
+                <p class="block text-sm font-semibold text-textPrimary mb-1">Accesso arterioso di protezione</p>
                 <div class="flex flex-col gap-2">
                   <label class="inline-flex items-center gap-2 text-sm text-textPrimary">
                   <Checkbox
@@ -1606,7 +1717,7 @@
                 </div>
               </div>
               <div>
-                <label class="block text-sm font-semibold text-textPrimary mb-1">Necessità di protezione osti coronarici</label>
+                <p class="block text-sm font-semibold text-textPrimary mb-1">Necessità di protezione osti coronarici</p>
                 <div class="flex flex-col gap-2">
                   <label class="inline-flex items-center gap-2 text-sm text-textPrimary">
                   <Checkbox
@@ -1704,27 +1815,29 @@
       </div>
     </div>
 
-    {#if showPrintPreview}
+    {#if showPrintPreview || silentPrintMode}
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
-        class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 print-overlay"
-        on:click={closePrintPreview}
+        class={`fixed inset-0 z-50 flex items-center justify-center p-4 print-overlay ${silentPrintMode ? 'silent-print bg-transparent' : 'bg-black/50'}`}
+        on:click={silentPrintMode ? undefined : closePrintPreview}
       >
         <div
-          class="bg-white rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col"
+          class="bg-surface rounded-2xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col print-container"
           on:click|stopPropagation
         >
-          <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-4 no-print">
-            <div>
-              <h3 class="text-lg font-semibold text-textPrimary">{printTitle}</h3>
-              <p class="text-xs text-textSecondary">Anteprima del documento pronta per la stampa</p>
+          {#if !silentPrintMode}
+            <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-4 no-print">
+              <div>
+                <h3 class="text-lg font-semibold text-textPrimary">{printTitle}</h3>
+                <p class="text-xs text-textSecondary">Anteprima del documento pronta per la stampa</p>
+              </div>
+              <Button variant="text" size="sm" on:click={closePrintPreview}>Chiudi</Button>
             </div>
-            <Button variant="text" size="sm" on:click={closePrintPreview}>Chiudi</Button>
-          </div>
+          {/if}
 
-          <div class="flex-1 overflow-auto bg-gray-50 p-6">
-            <div class="print-surface bg-white shadow-sm mx-auto w-full max-w-[840px]">
+          <div class="flex-1 overflow-auto bg-surface-muted p-6">
+            <div class="print-surface bg-surface shadow-sm mx-auto w-full max-w-[840px]">
               {#if printMode === 'docx'}
                 <div class="print-docx docx p-8" bind:this={printDocxContainer}></div>
               {:else if printMode === 'pdf'}
@@ -1741,18 +1854,34 @@
             </div>
           </div>
 
-          <div class="px-5 py-4 border-t border-gray-200 flex justify-end gap-2 no-print">
-            <Button variant="text" size="sm" on:click={closePrintPreview}>Chiudi</Button>
-            <Button variant="primary" size="sm" on:click={triggerPrint}>Stampa</Button>
-          </div>
+          {#if !silentPrintMode}
+            <div class="px-5 py-4 border-t border-gray-200 flex justify-end gap-2 no-print">
+              <Button variant="text" size="sm" on:click={closePrintPreview}>Chiudi</Button>
+              <Button variant="primary" size="sm" on:click={triggerPrint}>Stampa</Button>
+            </div>
+          {/if}
         </div>
       </div>
     {/if}
 
     {#if showDeleteConfirm}
-      <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" on:click={cancelDelete}>
-        <div class="max-w-md w-full" on:click|stopPropagation>
-          <Card padding="lg" class="bg-white">
+      <div
+        class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+        on:click={cancelDelete}
+        role="button"
+        tabindex="0"
+        on:keydown={(e) =>
+          (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && cancelDelete()}
+      >
+        <div
+          class="max-w-md w-full"
+          on:click|stopPropagation
+          on:keydown|stopPropagation
+          role="dialog"
+          aria-modal="true"
+          tabindex="-1"
+        >
+          <Card padding="lg" class="bg-surface">
             <div class="flex items-start gap-3">
               <IconBadge icon="alert" tone="error" />
               <div>
@@ -1795,6 +1924,16 @@
     margin: 0 auto 16px;
   }
 
+  @page {
+    size: A4;
+    margin: 15mm;
+  }
+
+  .silent-print {
+    opacity: 0;
+    pointer-events: none;
+  }
+
   @media print {
     :global(body *) {
       visibility: hidden;
@@ -1803,6 +1942,21 @@
     :global(.print-surface),
     :global(.print-surface *) {
       visibility: visible;
+    }
+
+    :global(.print-container) {
+      max-height: none !important;
+      overflow: visible !important;
+      height: auto !important;
+    }
+
+    :global(.print-overlay) {
+      align-items: flex-start !important;
+    }
+
+    :global(.silent-print) {
+      opacity: 1 !important;
+      pointer-events: auto !important;
     }
 
     :global(.print-overlay) {

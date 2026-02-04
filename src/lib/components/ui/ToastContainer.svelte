@@ -11,12 +11,12 @@
   };
 </script>
 
-<div class="fixed top-4 right-4 z-50 space-y-3 w-80 max-w-full">
+<div class="fixed top-3 right-4 z-50 space-y-2.5 w-80 max-w-full">
   {#each $toasts as toast (toast.id)}
     {#if toneMap[toast.type] || toneMap.info}
       {#if toneMap[toast.type]}
         <div
-          class={`flex items-start gap-3 p-4 rounded-lg shadow-card bg-white/95 ${toneMap[toast.type].text} ${toneMap[toast.type].border}`}
+          class={`flex items-start gap-2.5 p-3 rounded-lg shadow-card bg-surface/95 ${toneMap[toast.type].text} ${toneMap[toast.type].border}`}
           role="status"
           in:fly={{ x: 120, duration: 260, opacity: 0.25 }}
           out:fly={{ x: 120, duration: 220, opacity: 0 }}
@@ -33,7 +33,7 @@
         </div>
       {:else}
         <div
-          class={`flex items-start gap-3 p-4 rounded-lg shadow-card bg-white/95 ${toneMap.info.text} ${toneMap.info.border}`}
+          class={`flex items-start gap-2.5 p-3 rounded-lg shadow-card bg-surface/95 ${toneMap.info.text} ${toneMap.info.border}`}
           role="status"
           in:fly={{ x: 120, duration: 260, opacity: 0.25 }}
           out:fly={{ x: 120, duration: 220, opacity: 0 }}

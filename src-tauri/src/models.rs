@@ -132,6 +132,7 @@ pub struct Patient {
     pub sesso: Option<String>,
     pub altezza: Option<f64>,  // cm
     pub peso: Option<f64>,     // kg
+    pub note: Option<String>,
     pub ambulatorio_fattori: Option<Vec<String>>,
     pub anamnesi_cardiologica: Option<String>,
     pub apr: Option<String>,
@@ -145,6 +146,7 @@ pub struct Patient {
     pub procedurale_egfr: Option<String>,
     pub procedurale_hb: Option<String>,
     pub procedurale_altro: Option<String>,
+    pub data_tavi: Option<String>,
     pub procedurale_ecg_ritmo_sinusale: Option<bool>,
     pub procedurale_ecg_fa: Option<bool>,
     pub procedurale_ecg_bbs: Option<bool>,

@@ -137,7 +137,7 @@
       <div class="flex gap-1">
         <button
           type="button"
-          class="w-8 h-8 flex items-center justify-center text-sm border border-gray-200 rounded-md hover:bg-gray-50"
+          class="w-8 h-8 flex items-center justify-center text-sm border border-gray-200 rounded-md hover:bg-surface-stronger"
           on:click={execBold}
           aria-label="Grassetto"
         >
@@ -145,7 +145,7 @@
         </button>
         <button
           type="button"
-          class="w-8 h-8 flex items-center justify-center text-sm border border-gray-200 rounded-md hover:bg-gray-50 italic"
+          class="w-8 h-8 flex items-center justify-center text-sm border border-gray-200 rounded-md hover:bg-surface-stronger italic"
           on:click={execItalic}
           aria-label="Corsivo"
         >
@@ -153,7 +153,7 @@
         </button>
         <button
           type="button"
-          class="w-8 h-8 flex items-center justify-center text-sm border border-gray-200 rounded-md hover:bg-gray-50 underline"
+          class="w-8 h-8 flex items-center justify-center text-sm border border-gray-200 rounded-md hover:bg-surface-stronger underline"
           on:click={execUnderline}
           aria-label="Sottolineato"
         >
@@ -164,7 +164,7 @@
   {/if}
 
   <div
-    class="w-full border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white text-textPrimary text-left leading-relaxed rich-editor"
+    class="w-full border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-surface text-textPrimary text-left leading-relaxed rich-editor"
     bind:this={editorRef}
     contenteditable="true"
     on:input={handleInput}

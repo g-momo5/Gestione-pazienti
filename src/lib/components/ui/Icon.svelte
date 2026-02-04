@@ -31,6 +31,7 @@
     IconUserPlus,
     IconDatabase,
     IconFileText,
+    IconNote,
   } from '@tabler/icons-svelte';
 
   export let name = '';
@@ -71,6 +72,7 @@
     user: IconUser,
     database: IconDatabase,
     file: IconFileText,
+    note: IconNote,
   };
 
   $: Component = icons[name];

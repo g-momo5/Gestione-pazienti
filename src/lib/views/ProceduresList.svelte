@@ -184,7 +184,7 @@
     <Card padding="none" class="overflow-hidden">
       <div class="overflow-x-auto">
         <table class="w-full">
-          <thead class="bg-gray-50 border-b border-gray-200">
+          <thead class="bg-surface-strong border-b border-gray-200">
             <tr>
               <th class="px-4 py-3 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
                 Paziente
@@ -209,10 +209,10 @@
               </th>
             </tr>
           </thead>
-          <tbody class="bg-white divide-y divide-gray-200">
+          <tbody class="bg-surface divide-y divide-gray-200">
             {#each $filteredProcedures as procedure (procedure.id)}
               <tr
-                class="hover:bg-gray-50 transition-colors animate-fade-in"
+                class="hover:bg-surface-stronger transition-colors animate-fade-in"
               >
                 <td class="px-4 py-3 whitespace-nowrap">
                   <div class="font-medium text-textPrimary">
@@ -290,7 +290,7 @@
       class="max-w-3xl w-full max-h-[90vh] overflow-auto animate-slide-in"
       on:click={(e) => e.stopPropagation()}
     >
-      <div class="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
+      <div class="sticky top-0 bg-surface border-b border-gray-200 p-6 flex items-center justify-between">
         <div>
           <h3 class="text-2xl font-bold text-textPrimary">
             {capitalizeWords(selectedProcedure.nome)} {capitalizeWords(selectedProcedure.cognome)}

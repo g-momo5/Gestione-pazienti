@@ -4,12 +4,16 @@
   const dispatch = createEventDispatcher();
 
   export let label = '';
+  export let id = '';
   export let value = '';
   export let options = []; // Array of {value, label}
   export let error = '';
   export let required = false;
   export let disabled = false;
   export let placeholder = 'Seleziona...';
+
+  const fallbackId = `select-${Math.random().toString(36).slice(2, 9)}`;
+  $: selectId = id || fallbackId;
 
   const handleChange = (e) => {
     value = e.target.value;
@@ -19,7 +23,7 @@
 
 <div class="w-full">
   {#if label}
-    <label class="block text-sm font-semibold text-textPrimary mb-1">
+    <label class="block text-sm font-semibold text-textPrimary mb-1" for={selectId}>
       {label}
       {#if required}
         <span class="text-error">*</span>
@@ -28,6 +32,7 @@
   {/if}
 
   <select
+    id={selectId}
     {required}
     {disabled}
     bind:value
@@ -37,7 +42,7 @@
            {error
              ? 'border-error focus:ring-error'
              : 'border-gray-300 focus:ring-primary focus:border-primary'}
-           {disabled ? 'bg-gray-100 cursor-not-allowed' : 'bg-white cursor-pointer'}"
+           {disabled ? 'bg-surface-strong cursor-not-allowed' : 'bg-surface cursor-pointer'}"
   >
     {#if placeholder}
       <option value="" disabled selected={!value}>{placeholder}</option>

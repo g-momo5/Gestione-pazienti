@@ -16,7 +16,8 @@
     loadPatients,
     loadStatusCounts,
     loadPatient,
-    createPatient
+    createPatient,
+    updatePatient
   } from './lib/stores/patientStore.js';
   import { formatDateIT, calculateAge } from './lib/utils/dateUtils.js';
   import { loadPlaces } from './lib/utils/placeSuggestions.js';
@@ -39,6 +40,11 @@
   ]);
 
   let currentView = 'home';
+  let mainScrollEl;
+  const HEADER_MAX = 64;
+  const HEADER_MIN = 32;
+  const HEADER_SHRINK_DISTANCE = 200;
+  let headerHeight = HEADER_MAX;
   let selectedPatientId = null;
   let loadingDetail = false;
   const PLACE_DATA = loadPlaces();
@@ -60,10 +66,16 @@
     telefono: '',
     email: '',
     provenienza: '',
+    data_tavi: '',
+    note: '',
   };
   let formErrors = {};
   let statusCountsValue = [];
   $: statusCountsValue = $statusCounts;
+  let noteModalOpen = false;
+  let noteModalPatient = null;
+  let noteModalValue = '';
+  let savingNote = false;
   // Impostazioni (solo UI locale per ora)
   const DEFAULT_REFERTI_PROC_NAMING = 'Scheda procedurale - {cognome} {nome}.docx';
   const DEFAULT_REFERTI_AMB_NAMING = 'Referto ambulatorio - {cognome} {nome}.docx';
@@ -329,8 +341,34 @@
     }
   }
 
+  const lerp = (start, end, t) => start + (end - start) * t;
+  const clamp01 = (v) => Math.min(Math.max(v, 0), 1);
+
+  const getScrollTop = () => {
+    if (mainScrollEl && mainScrollEl.scrollHeight > mainScrollEl.clientHeight + 1) {
+      return mainScrollEl.scrollTop;
+    }
+    if (typeof window !== 'undefined') {
+      return window.scrollY || document.documentElement.scrollTop || 0;
+    }
+    return 0;
+  };
+
+  function handleMainScroll() {
+    const t = clamp01(getScrollTop() / HEADER_SHRINK_DISTANCE);
+    headerHeight = lerp(HEADER_MAX, HEADER_MIN, t);
+  }
+
+  $: headerShrink = clamp01((HEADER_MAX - headerHeight) / (HEADER_MAX - HEADER_MIN));
+  $: logoSize = Math.round(lerp(40, 20, headerShrink));
+  $: titleSize = lerp(20, 14, headerShrink);
+  $: buttonFontSize = lerp(14, 12, headerShrink);
+  $: buttonPadX = lerp(16, 10, headerShrink);
+  $: buttonPadY = lerp(8, 4, headerShrink);
+
   onMount(() => {
     loadPersistedSettings();
+    handleMainScroll();
   });
   $: statusSummaries = STATUS_CONFIG.map(({ key, label }) => {
     const grouped = ($patientsByStatus[key] || []).length;
@@ -385,6 +423,39 @@
     currentView = 'settings';
   }
 
+  function openNoteModal(patient) {
+    noteModalPatient = patient;
+    noteModalValue = patient?.patient?.note || '';
+    noteModalOpen = true;
+  }
+
+  function closeNoteModal() {
+    noteModalOpen = false;
+    noteModalPatient = null;
+    noteModalValue = '';
+  }
+
+  async function saveNote() {
+    if (!noteModalPatient?.patient?.id) return;
+    savingNote = true;
+    const payload = {
+      ...noteModalPatient.patient,
+      note: noteModalValue || null,
+    };
+
+    try {
+      await updatePatient(payload);
+      await refreshData();
+      showToast('Note salvate', 'success');
+      closeNoteModal();
+    } catch (e) {
+      console.error(e);
+      showToast('Errore durante il salvataggio delle note', 'error');
+    } finally {
+      savingNote = false;
+    }
+  }
+
   // Conta per stato: prima dai conteggi back-end, fallback a derived locale.
   function getCount(status) {
     const derivedCount = ($patientsByStatus[status] || []).length;
@@ -422,20 +493,32 @@
     return `${width}%`;
   }
 
+  const getPlaceLabel = (item) => {
+    if (typeof item === 'string') return item;
+    return item?.nome || item?.name || item?.label || '';
+  };
+
+  const getPlaceCode = (item) => {
+    if (typeof item !== 'object' || item === null) return null;
+    return item.codice_catastale || item.codice || null;
+  };
+
+  const findPlaceCode = (value) => {
+    if (!value || !value.trim()) return '';
+    const q = value.trim().toLowerCase();
+    const base = [...(placeData.comuni || []), ...(placeData.stati || [])];
+    const match = base.find((item) => getPlaceLabel(item).trim().toLowerCase() === q);
+    return match ? getPlaceCode(match) || '' : '';
+  };
+
   const filterPlaces = (value) => {
     if (!value || value.trim().length < 2) return [];
     const q = value.trim().toLowerCase();
     const base = [...(placeData.comuni || []), ...(placeData.stati || [])];
     return base
       .map(item => {
-        const label =
-          typeof item === 'string'
-            ? item
-            : item.nome || item.name || item.label || '';
-        const codice =
-          typeof item === 'object'
-            ? item.codice_catastale || item.codice || null
-            : null;
+        const label = getPlaceLabel(item);
+        const codice = getPlaceCode(item);
         return { label, codice };
       })
       .filter(item => item.label.toLowerCase().includes(q))
@@ -569,6 +652,7 @@
   }
 
   function updateNewPatientCF() {
+    newPatientForm.luogo_nascita_codice = findPlaceCode(newPatientForm.luogo_nascita);
     const cf = calcCodiceFiscale(newPatientForm);
     if (cf) {
       newPatientForm.codice_fiscale = cf;
@@ -588,6 +672,8 @@
       telefono: '',
       email: '',
       provenienza: '',
+      data_tavi: '',
+      note: '',
     };
     newPatientDateDisplay = '';
     newPatientDateError = '';
@@ -639,6 +725,8 @@
       email: normalize(newPatientForm.email),
       provenienza: normalize(newPatientForm.provenienza),
       sesso: newPatientForm.sesso || null,
+      data_tavi: normalize(newPatientForm.data_tavi),
+      note: normalize(newPatientForm.note),
     };
 
     savingPatient = true;
@@ -657,31 +745,42 @@
   }
 </script>
 
-<main class="h-screen bg-background text-textPrimary flex flex-col">
+<svelte:window on:scroll={handleMainScroll} />
+
+<main class="min-h-screen bg-background text-textPrimary flex flex-col">
   <!-- Header -->
-  <header class="h-16 bg-white border-b border-gray-200 px-6 flex items-center justify-between flex-shrink-0">
+  <header
+    class="bg-surface/95 backdrop-blur border-b border-gray-200 px-6 flex items-center justify-between flex-shrink-0 sticky top-0 z-40 transition-[height] duration-100"
+    style={`height: ${headerHeight}px;`}
+  >
     <div class="flex items-center gap-4">
-      <img src="/icons/icon.png" alt="Logo TAVI" class="h-10 w-10 rounded-lg" />
-      <h1 class="text-xl font-semibold text-textPrimary">Gestionale Pazienti TAVI</h1>
-    </div>
-    {#if currentView === 'patient-detail' || currentView === 'settings'}
-      <button
-        on:click={backToHome}
-        class="px-4 py-2 rounded-lg bg-secondary text-white hover:bg-secondary/90 transition-colors"
+      <img
+        src="/icons/icon.png"
+        alt="Logo TAVI"
+        class="rounded-lg transition-[width,height] duration-100"
+        style={`width: ${logoSize}px; height: ${logoSize}px;`}
+      />
+      <h1
+        class="font-semibold text-textPrimary transition-[font-size] duration-100"
+        style={`font-size: ${titleSize}px;`}
       >
-        ← Torna alla Home
-      </button>
-    {/if}
+        Gestionale Pazienti TAVI
+      </h1>
+    </div>
   </header>
 
   <!-- Main content area -->
-  <div class="flex-1 overflow-y-auto p-6">
+  <div
+    class="flex-1 overflow-y-auto p-6 pb-20"
+    bind:this={mainScrollEl}
+    on:scroll={handleMainScroll}
+  >
     {#if currentView === 'home'}
       <div class="max-w-7xl mx-auto space-y-8">
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 class="text-2xl font-bold text-textPrimary">Pazienti TAVI</h2>
-            <p class="text-textSecondary mt-1">Gestisci i pazienti per stato e checklist</p>
+            <p class="text-textSecondary mt-1">Gestisci i pazienti candidati a procedura TAVI</p>
           </div>
           <div class="flex items-center gap-3">
             <Button
@@ -707,7 +806,7 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
           {#each statusCardGroups as summary (summary.key)}
             {#if !summary.combo}
-              <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <div class="bg-surface rounded-xl shadow-sm border border-gray-200 p-6">
                 <div class="flex items-center justify-between mb-2">
                   <h3 class="font-semibold text-textPrimary">{summary.label}</h3>
                   <span class="text-2xl font-bold text-primary">{summary.card}</span>
@@ -717,12 +816,12 @@
                     <div
                       class="h-full bg-primary transition-all duration-300"
                       style={`width: ${getProgress(summary.key, summary.card)}`}
-                    />
+                    ></div>
                   </div>
                 {/if}
               </div>
             {:else}
-              <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-3">
+              <div class="bg-surface rounded-xl shadow-sm border border-gray-200 p-6 space-y-3">
                 {#each summary.entries as entry (entry.key)}
                   <div class="flex items-center justify-between">
                     <h3 class="font-semibold text-textPrimary">{entry.label}</h3>
@@ -738,7 +837,7 @@
         {#each statusSummaries as summary (summary.key)}
           {@const statusPatients = $patientsByStatus[summary.key] || []}
 
-          <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div class="bg-surface rounded-xl shadow-sm border border-gray-200 overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <h2 class="text-lg font-semibold text-textPrimary">{summary.label}</h2>
               <span class="px-3 py-1 rounded-full text-sm font-medium {getStatusColor(summary.key)}">
@@ -753,8 +852,11 @@
             {:else}
               <div class="overflow-x-auto">
                 <table class="w-full">
-                  <thead class="bg-gray-50 border-b border-gray-200">
+                  <thead class="bg-surface-strong border-b border-gray-200">
                     <tr>
+                      <th class="px-4 py-3 text-left text-xs font-medium text-textSecondary uppercase tracking-wider w-16">
+                        Note
+                      </th>
                       <th class="px-6 py-3 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
                         Paziente
                       </th>
@@ -775,12 +877,22 @@
                       </th>
                     </tr>
                   </thead>
-                  <tbody class="bg-white divide-y divide-gray-200">
+                  <tbody class="bg-surface divide-y divide-gray-200">
                     {#each statusPatients as patient}
                       <tr
                         on:click={() => openPatient(patient)}
-                        class="hover:bg-gray-50 cursor-pointer transition-colors"
+                        class="hover:bg-surface-stronger cursor-pointer transition-colors"
                       >
+                        <td class="px-4 py-4 whitespace-nowrap">
+                          <button
+                            type="button"
+                            class="p-2 rounded-full hover:bg-primary/10 transition focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            on:click|stopPropagation={() => openNoteModal(patient)}
+                            aria-label="Note paziente"
+                          >
+                            <IconBadge icon="note" tone={patient.patient?.note ? 'primary' : 'neutral'} />
+                          </button>
+                        </td>
                         <td class="px-6 py-4 whitespace-nowrap">
                           <div class="font-medium text-textPrimary">
                             {patient.patient?.nome} {patient.patient?.cognome}
@@ -819,11 +931,67 @@
           </div>
         {/each}
       </div>
+
+      {#if noteModalOpen}
+        <div
+          class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          on:click={(e) => e.target === e.currentTarget && closeNoteModal()}
+          role="button"
+          tabindex="0"
+          on:keydown={(e) => (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && closeNoteModal()}
+        >
+          <div
+            class="bg-surface rounded-xl shadow-xl w-full max-w-lg overflow-hidden"
+            role="dialog"
+            aria-modal="true"
+            tabindex="-1"
+          >
+            <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
+              <div>
+                <h3 class="text-lg font-semibold text-textPrimary">Note paziente</h3>
+                {#if noteModalPatient?.patient}
+                  <p class="text-sm text-textSecondary">
+                    {noteModalPatient.patient.nome} {noteModalPatient.patient.cognome}
+                  </p>
+                {/if}
+              </div>
+              <Button variant="text" size="sm" on:click={closeNoteModal}>Chiudi</Button>
+            </div>
+            <div class="p-5 space-y-3">
+              <label class="text-sm font-medium text-textPrimary block" for="noteModalText">Note</label>
+              <textarea
+                id="noteModalText"
+                class="w-full min-h-[160px] px-3 py-2 border rounded-lg border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                bind:value={noteModalValue}
+                placeholder="Aggiungi note cliniche o logistiche"
+              ></textarea>
+            </div>
+            <div class="px-5 py-4 border-t border-gray-200 flex justify-end gap-2">
+              <Button variant="text" size="sm" on:click={closeNoteModal}>Annulla</Button>
+              <Button variant="primary" size="sm" disabled={savingNote} on:click={saveNote}>
+                {savingNote ? 'Salvataggio...' : 'Salva note'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      {/if}
     {:else if currentView === 'settings'}
       <div class="max-w-7xl mx-auto space-y-8">
         <div class="space-y-2">
-          <h2 class="text-2xl font-bold text-textPrimary">Impostazioni</h2>
-          <p class="text-textSecondary">Configura salvataggio dati e referti.</p>
+          <div class="flex items-start gap-3">
+            <button
+              type="button"
+              on:click={backToHome}
+              class="w-9 h-9 rounded-full border border-gray-200 bg-surface text-textPrimary hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1"
+              aria-label="Torna alla home"
+            >
+              ←
+            </button>
+            <div>
+              <h2 class="text-2xl font-bold text-textPrimary">Impostazioni</h2>
+              <p class="text-textSecondary">Configura salvataggio dati e referti.</p>
+            </div>
+          </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -932,7 +1100,7 @@
         </div>
       </div>
     {:else if currentView === 'patient-detail'}
-      <div class="max-w-6xl mx-auto">
+      <div class="max-w-7xl mx-auto">
         <PatientDetail
           patient={$selectedPatient}
           loading={loadingDetail}
@@ -941,17 +1109,25 @@
       </div>
     {/if}
   </div>
+  <footer class="fixed bottom-0 inset-x-0 border-t border-gray-200 bg-surface/95 backdrop-blur px-4 py-3 z-40">
+    <div class="max-w-7xl mx-auto text-center text-xs text-textSecondary">
+      Gestionale Pazienti TAVI • Uso riservato al personale autorizzato
+    </div>
+  </footer>
 </main>
 
 {#if showNewPatientModal}
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div
     class="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-40"
     on:click={closeNewPatientModal}
+    role="button"
+    tabindex="0"
+    on:keydown={(e) =>
+      (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && closeNewPatientModal()}
   >
     <Card
       padding="lg"
-      class="max-w-3xl w-full bg-white shadow-xl"
+      class="max-w-3xl w-full bg-surface shadow-xl"
       on:click={(e) => e.stopPropagation()}
     >
       <div class="flex items-start justify-between gap-4 mb-6">
@@ -1007,14 +1183,17 @@
             bind:value={newPatientForm.luogo_nascita}
             on:focus={() => (showLuogoSuggestions = true)}
             on:input={() => (showLuogoSuggestions = true)}
-            on:blur={() => setTimeout(() => (showLuogoSuggestions = false), 120)}
+            on:blur={() => {
+              setTimeout(() => (showLuogoSuggestions = false), 120);
+              updateNewPatientCF();
+            }}
           />
           {#if showLuogoSuggestions && filterPlaces(newPatientForm.luogo_nascita).length}
-            <div class="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+            <div class="absolute z-30 mt-1 w-full bg-surface border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
               {#each filterPlaces(newPatientForm.luogo_nascita) as suggestion}
                 <button
                   type="button"
-                  class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                  class="w-full text-left px-3 py-2 text-sm hover:bg-surface-stronger"
                   on:click={() => {
                     newPatientForm.luogo_nascita = suggestion.label;
                     newPatientForm.luogo_nascita_codice = suggestion.codice || '';
@@ -1080,11 +1259,11 @@
             on:blur={() => setTimeout(() => (showProvSuggestions = false), 120)}
           />
           {#if showProvSuggestions && filterPlaces(newPatientForm.provenienza).length}
-            <div class="absolute z-30 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+            <div class="absolute z-30 mt-1 w-full bg-surface border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
               {#each filterPlaces(newPatientForm.provenienza) as suggestion}
                 <button
                   type="button"
-                  class="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                  class="w-full text-left px-3 py-2 text-sm hover:bg-surface-stronger"
                   on:click={() => {
                     newPatientForm.provenienza = suggestion.label;
                     showProvSuggestions = false;
@@ -1117,7 +1296,7 @@
 
 {#if showInitialSetup}
   <div class="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-    <Card padding="lg" class="max-w-3xl w-full bg-white shadow-2xl">
+    <Card padding="lg" class="max-w-3xl w-full bg-surface shadow-2xl">
       <div class="mb-4">
         <h3 class="text-xl font-bold text-textPrimary">Configura percorsi</h3>
         <p class="text-sm text-textSecondary mt-1">Seleziona dove salvare database e referti.</p>

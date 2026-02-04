@@ -2,7 +2,9 @@ import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 // https://vitejs.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Use relative base only for Tauri build output (file://). In dev serve from root.
+  base: command === 'build' && process.env.TAURI_PLATFORM ? './' : '/',
   plugins: [svelte()],
 
   // Prevent vite from obscuring rust errors
@@ -30,4 +32,4 @@ export default defineConfig({
     // Produce sourcemaps for debug builds
     sourcemap: !!process.env.TAURI_DEBUG,
   },
-});
+}));
