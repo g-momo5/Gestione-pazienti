@@ -98,6 +98,8 @@ impl Database {
                 conclusioni TEXT,
                 medico_titolo TEXT,
                 medico_nome TEXT,
+                medico_specializzando_titolo TEXT,
+                medico_specializzando_nome TEXT,
                 procedurale_allergia_mdc TEXT,
                 procedurale_preparazione_mdc TEXT,
                 procedurale_creatinina TEXT,
@@ -144,6 +146,8 @@ impl Database {
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN conclusioni TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN medico_titolo TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN medico_nome TEXT", []);
+        let _ = conn.execute("ALTER TABLE patients ADD COLUMN medico_specializzando_titolo TEXT", []);
+        let _ = conn.execute("ALTER TABLE patients ADD COLUMN medico_specializzando_nome TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN procedurale_allergia_mdc TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN procedurale_preparazione_mdc TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN procedurale_creatinina TEXT", []);
@@ -573,7 +577,7 @@ impl Database {
         let result = conn.execute(
             "INSERT INTO patients (
                 nome, cognome, data_nascita, luogo_nascita, codice_fiscale, telefono, email, provenienza, sesso, altezza, peso, note,
-                ambulatorio_fattori, anamnesi_cardiologica, apr, visita_odierna, conclusioni, medico_titolo, medico_nome,
+                ambulatorio_fattori, anamnesi_cardiologica, apr, visita_odierna, conclusioni, medico_titolo, medico_nome, medico_specializzando_titolo, medico_specializzando_nome,
                 procedurale_allergia_mdc, procedurale_preparazione_mdc, procedurale_creatinina, procedurale_egfr, procedurale_hb, procedurale_altro, data_tavi,
                 procedurale_ecg_ritmo_sinusale, procedurale_ecg_fa, procedurale_ecg_bbs, procedurale_ecg_bbd, procedurale_ecg_eas, procedurale_ecg_bav_primo, procedurale_ecg_ritmo_stimolato,
                 procedurale_anestesia, procedurale_coronarografia, procedurale_coronarografia_note, procedurale_pacemaker, procedurale_pacemaker_note,
@@ -583,7 +587,7 @@ impl Database {
             )
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
                      ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33,
-                     ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50)",
+                     ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52)",
             params![
                 patient.nome,
                 patient.cognome,
@@ -604,6 +608,8 @@ impl Database {
                 patient.conclusioni,
                 patient.medico_titolo,
                 patient.medico_nome,
+                patient.medico_specializzando_titolo,
+                patient.medico_specializzando_nome,
                 patient.procedurale_allergia_mdc,
                 patient.procedurale_preparazione_mdc,
                 patient.procedurale_creatinina,
@@ -678,21 +684,22 @@ impl Database {
                 note = ?12,
                 ambulatorio_fattori = ?13, anamnesi_cardiologica = ?14, apr = ?15,
                 visita_odierna = ?16, conclusioni = ?17, medico_titolo = ?18, medico_nome = ?19,
-                procedurale_allergia_mdc = ?20, procedurale_preparazione_mdc = ?21, procedurale_creatinina = ?22,
-                procedurale_egfr = ?23, procedurale_hb = ?24, procedurale_altro = ?25, data_tavi = ?26,
-                procedurale_ecg_ritmo_sinusale = ?27, procedurale_ecg_fa = ?28, procedurale_ecg_bbs = ?29,
-                procedurale_ecg_bbd = ?30, procedurale_ecg_eas = ?31, procedurale_ecg_bav_primo = ?32,
-                procedurale_ecg_ritmo_stimolato = ?33,
-                procedurale_anestesia = ?34, procedurale_coronarografia = ?35, procedurale_coronarografia_note = ?36,
-                procedurale_pacemaker = ?37, procedurale_pacemaker_note = ?38,
-                procedurale_accesso_principale_fem = ?39, procedurale_accesso_principale_altro = ?40,
-                procedurale_accesso_protezione = ?41, procedurale_accesso_protezione_note = ?42,
-                procedurale_altri_accessi = ?43, procedurale_diametro_pallone_femorale = ?44,
-                procedurale_guida_safari = ?45, procedurale_protezione_osti = ?46,
-                procedurale_valvuloplastica = ?47, procedurale_valvuloplastica_note = ?48,
-                procedurale_bioprotesi_modello = ?49, procedurale_bioprotesi_dimensione = ?50,
+                medico_specializzando_titolo = ?20, medico_specializzando_nome = ?21,
+                procedurale_allergia_mdc = ?22, procedurale_preparazione_mdc = ?23, procedurale_creatinina = ?24,
+                procedurale_egfr = ?25, procedurale_hb = ?26, procedurale_altro = ?27, data_tavi = ?28,
+                procedurale_ecg_ritmo_sinusale = ?29, procedurale_ecg_fa = ?30, procedurale_ecg_bbs = ?31,
+                procedurale_ecg_bbd = ?32, procedurale_ecg_eas = ?33, procedurale_ecg_bav_primo = ?34,
+                procedurale_ecg_ritmo_stimolato = ?35,
+                procedurale_anestesia = ?36, procedurale_coronarografia = ?37, procedurale_coronarografia_note = ?38,
+                procedurale_pacemaker = ?39, procedurale_pacemaker_note = ?40,
+                procedurale_accesso_principale_fem = ?41, procedurale_accesso_principale_altro = ?42,
+                procedurale_accesso_protezione = ?43, procedurale_accesso_protezione_note = ?44,
+                procedurale_altri_accessi = ?45, procedurale_diametro_pallone_femorale = ?46,
+                procedurale_guida_safari = ?47, procedurale_protezione_osti = ?48,
+                procedurale_valvuloplastica = ?49, procedurale_valvuloplastica_note = ?50,
+                procedurale_bioprotesi_modello = ?51, procedurale_bioprotesi_dimensione = ?52,
                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?51",
+             WHERE id = ?53",
             params![
                 patient.nome,
                 patient.cognome,
@@ -713,6 +720,8 @@ impl Database {
                 patient.conclusioni,
                 patient.medico_titolo,
                 patient.medico_nome,
+                patient.medico_specializzando_titolo,
+                patient.medico_specializzando_nome,
                 patient.procedurale_allergia_mdc,
                 patient.procedurale_preparazione_mdc,
                 patient.procedurale_creatinina,
@@ -837,6 +846,8 @@ impl Database {
                     conclusioni: row.get("conclusioni").ok(),
                     medico_titolo: row.get("medico_titolo").ok(),
                     medico_nome: row.get("medico_nome").ok(),
+                    medico_specializzando_titolo: row.get("medico_specializzando_titolo").ok(),
+                    medico_specializzando_nome: row.get("medico_specializzando_nome").ok(),
                     procedurale_allergia_mdc: row.get("procedurale_allergia_mdc").ok(),
                     procedurale_preparazione_mdc: row.get("procedurale_preparazione_mdc").ok(),
                     procedurale_creatinina: row.get("procedurale_creatinina").ok(),

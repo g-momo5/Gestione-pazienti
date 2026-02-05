@@ -727,6 +727,18 @@ pub async fn generate_ambulatorio_referto(
         _ => "Dott.".to_string(),
     };
 
+    let drdrssasp = match p.medico_specializzando_titolo.as_deref() {
+        Some(t) if t.to_lowercase().contains("ssa") => "Dott.ssa".to_string(),
+        _ => "Dott.".to_string(),
+    };
+    let specializzando_name = p.medico_specializzando_nome.unwrap_or_default();
+    let has_specializzando = !specializzando_name.trim().is_empty();
+    let specializzando_label = if has_specializzando {
+        "Il Medico in formazione specialistica,".to_string()
+    } else {
+        String::new()
+    };
+
     let fattori_raw = p
         .ambulatorio_fattori
         .clone()
@@ -743,14 +755,14 @@ pub async fn generate_ambulatorio_referto(
     let h_anamnesi_cardiologica = if anamnesi_cardiologica_raw.trim().is_empty() {
         String::new()
     } else {
-        "Anamnesi Cardiologica".to_string()
+        "Anamnesi Patologica Remota".to_string()
     };
     let apr_raw = p.apr.unwrap_or_default();
     let apr = apr_raw.clone(); // mantieni esattamente il testo inserito
     let h_apr = if apr_raw.trim().is_empty() {
         String::new()
     } else {
-        "APR".to_string()
+        "Terapia domiciliare".to_string()
     };
     let visita_raw = p.visita_odierna.unwrap_or_default();
     let visita_odierna = visita_raw.replace('-', "").trim().to_string();
@@ -776,16 +788,19 @@ pub async fn generate_ambulatorio_referto(
         ("cf", p.codice_fiscale.unwrap_or_default()),
         ("h_fdrcv", h_fattori),
         ("fdrcv", fattori),
-        ("h_anamnesi_cardiologica", h_anamnesi_cardiologica),
-        ("anamnesi_cardiologica", anamnesi_cardiologica),
-        ("h_apr", h_apr),
-        ("apr", apr),
+        ("h_anamnesi_patologica_remota", h_anamnesi_cardiologica),
+        ("anamnesi_patologica_remota", anamnesi_cardiologica),
+        ("h_terapia_domiciliare", h_apr),
+        ("terapia_domiciliare", apr),
         ("h_visita_odierna", h_visita_odierna),
         ("visita_odierna", visita_odierna),
         ("h_conclusioni", h_conclusioni),
         ("conclusioni", conclusioni),
         ("drdrssa", drdrssa),
         ("cardiologo", p.medico_nome.unwrap_or_default()),
+        ("specializzando", specializzando_label),
+        ("drdrssasp", if has_specializzando { drdrssasp } else { String::new() }),
+        ("nome_specializzando", if has_specializzando { specializzando_name } else { String::new() }),
     ]);
 
     let template_path = resolve_template_path(&app_handle, "template_amb_strutturale.docx")?;

@@ -111,20 +111,6 @@
         { id: 'accertamenti_anestesista', label: "Accertamenti/prescrizioni richiesti dall'anestesista eseguiti" },
       ],
     },
-    {
-      id: 'preparazione_procedura',
-      title: 'Preparazione del paziente in vista della procedura',
-      icon: 'hospital',
-      items: [
-        { id: 'criticita_valutazioni', label: 'Criticità rilevate nella valutazione clinica e/o nella valutazione infermieristica' },
-        { id: 'emoderivati', label: 'Richiesta/emogruppo ed emoderivati (se necessari)' },
-        { id: 'consenso_informato', label: 'Consenso informato firmato' },
-        { id: 'idratazione_mdc', label: 'Idratazione per somministrazione di mdc (per pazienti con eGFR<60 ml/min/m2)' },
-        { id: 'profilassi_allergie_mdc', label: 'Profilassi per le allergie da mdc (ove indicato)' },
-        { id: 'sospensione_anticoagulante', label: 'Sospensione adeguata terapia anticoagulante' },
-        { id: 'profilassi_antibiotica', label: 'Prescrizione profilassi antibiotica' },
-      ],
-    },
   ];
 
   let statusSelection = '';
@@ -159,7 +145,9 @@
     visita: '',
     conclusioni: '',
     medicoTitolo: 'Dott.',
-    medicoNome: '',
+    medicoNome: 'Pierluigi Merella',
+    specializzandoTitolo: 'Dott.',
+    specializzandoNome: '',
   };
   let savingAmbulatorio = false;
   let schedaProceduraleForm = {
@@ -213,6 +201,8 @@
   let autoPrintPending = false;
   let deletingPatient = false;
   let showDeleteConfirm = false;
+  let showAmbulatorioStatusConfirm = false;
+  let changingStatusAfterReferto = false;
   const PLACE_DATA = loadPlaces();
   let placeData = PLACE_DATA;
   let showProvSuggestions = false;
@@ -242,18 +232,30 @@
 
   function loadAmbulatorio() {
     if (!patient?.patient) {
-      ambulatorioForm = { fattori: [], anamnesi: '', apr: '', visita: '', conclusioni: '', medicoTitolo: 'Dott.', medicoNome: '' };
+      ambulatorioForm = {
+        fattori: [],
+        anamnesi: '',
+        apr: '',
+        visita: '',
+        conclusioni: '',
+        medicoTitolo: 'Dott.',
+        medicoNome: 'Pierluigi Merella',
+        specializzandoTitolo: 'Dott.',
+        specializzandoNome: '',
+      };
       return;
     }
 
     ambulatorioForm = {
       fattori: patient.patient.ambulatorio_fattori || [],
-      anamnesi: patient.patient.anamnesi_cardiologica || '',
-      apr: patient.patient.apr || '',
-      visita: patient.patient.visita_odierna || '',
-      conclusioni: patient.patient.conclusioni || '',
+      anamnesi: stripFormatting(patient.patient.anamnesi_cardiologica || ''),
+      apr: stripFormatting(patient.patient.apr || ''),
+      visita: stripFormatting(patient.patient.visita_odierna || ''),
+      conclusioni: stripFormatting(patient.patient.conclusioni || ''),
       medicoTitolo: patient.patient.medico_titolo || 'Dott.',
-      medicoNome: patient.patient.medico_nome || '',
+      medicoNome: patient.patient.medico_nome || 'Pierluigi Merella',
+      specializzandoTitolo: patient.patient.medico_specializzando_titolo || 'Dott.',
+      specializzandoNome: patient.patient.medico_specializzando_nome || '',
     };
   }
 
@@ -452,6 +454,20 @@
     if (value === undefined || value === null) return null;
     const v = String(value).trim();
     return v === '' ? null : v;
+  };
+
+  const stripFormatting = (value) => {
+    if (value === undefined || value === null) return '';
+    let v = String(value);
+    v = v.replace(/<\/?[a-z][^>]*>/gi, '');
+    v = v.replace(/\*\*(.*?)\*\*/g, '$1');
+    v = v.replace(/__(.*?)__/g, '$1');
+    v = v.replace(/\*(.*?)\*/g, '$1');
+    return v;
+  };
+
+  const normalizePlainText = (value) => {
+    return normalizeText(stripFormatting(value));
   };
 
   const normalizeNumber = (value) => {
@@ -686,6 +702,27 @@
     showDeleteConfirm = false;
   }
 
+  async function confirmAmbulatorioStatusChange() {
+    if (!patient?.patient?.id) return;
+    changingStatusAfterReferto = true;
+    try {
+      await changePatientStatus(patient.patient.id, 'In corso di accertamenti');
+      await loadPatient(patient.patient.id);
+      statusSelection = 'In corso di accertamenti';
+      showToast('Stato paziente aggiornato', 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Errore durante l\'aggiornamento dello stato', 'error');
+    } finally {
+      changingStatusAfterReferto = false;
+      showAmbulatorioStatusConfirm = false;
+    }
+  }
+
+  function cancelAmbulatorioStatusChange() {
+    showAmbulatorioStatusConfirm = false;
+  }
+
   async function saveAntropometrici() {
     if (!patient?.patient?.id) return;
     savingAntropometrici = true;
@@ -715,12 +752,14 @@
     const payload = {
       ...patient.patient,
       ambulatorio_fattori: ambulatorioForm.fattori,
-      anamnesi_cardiologica: normalizeText(ambulatorioForm.anamnesi),
-      apr: normalizeText(ambulatorioForm.apr),
-      visita_odierna: normalizeText(ambulatorioForm.visita),
-      conclusioni: normalizeText(ambulatorioForm.conclusioni),
+      anamnesi_cardiologica: normalizePlainText(ambulatorioForm.anamnesi),
+      apr: normalizePlainText(ambulatorioForm.apr),
+      visita_odierna: normalizePlainText(ambulatorioForm.visita),
+      conclusioni: normalizePlainText(ambulatorioForm.conclusioni),
       medico_titolo: normalizeText(ambulatorioForm.medicoTitolo),
       medico_nome: normalizeText(ambulatorioForm.medicoNome),
+      medico_specializzando_titolo: normalizeText(ambulatorioForm.specializzandoTitolo),
+      medico_specializzando_nome: normalizeText(ambulatorioForm.specializzandoNome),
     };
 
     try {
@@ -835,6 +874,9 @@
         await maybeOpenReferto(path);
       } else {
         showToast('Referto generato', 'success');
+      }
+      if (patient.status !== 'In corso di accertamenti') {
+        showAmbulatorioStatusConfirm = true;
       }
     } catch (e) {
       console.error('Errore referto', e);
@@ -1103,12 +1145,14 @@
     };
     ambulatorioForm = {
       fattori: patient.patient.ambulatorio_fattori || [],
-      anamnesi: patient.patient.anamnesi_cardiologica || '',
-      apr: patient.patient.apr || '',
-      visita: patient.patient.visita_odierna || '',
-      conclusioni: patient.patient.conclusioni || '',
+      anamnesi: stripFormatting(patient.patient.anamnesi_cardiologica || ''),
+      apr: stripFormatting(patient.patient.apr || ''),
+      visita: stripFormatting(patient.patient.visita_odierna || ''),
+      conclusioni: stripFormatting(patient.patient.conclusioni || ''),
       medicoTitolo: patient.patient.medico_titolo || 'Dott.',
-      medicoNome: patient.patient.medico_nome || '',
+      medicoNome: patient.patient.medico_nome || 'Pierluigi Merella',
+      specializzandoTitolo: patient.patient.medico_specializzando_titolo || 'Dott.',
+      specializzandoNome: patient.patient.medico_specializzando_nome || '',
     };
     taviDate = patient.patient.data_tavi || '';
     anagraficaDateDisplay = formatDisplayFromIso(patient.patient.data_nascita || '');
@@ -1469,32 +1513,62 @@
                 </select>
               </div>
               <Input
-                label="Cardiologo referente"
+                label="Cardiologo refertante"
                 placeholder="Nome e cognome"
                 bind:value={ambulatorioForm.medicoNome}
               />
             </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-textPrimary mb-1" for="ambulatorioSpecializzandoTitolo">Titolo specializzando</label>
+                <select
+                  id="ambulatorioSpecializzandoTitolo"
+                  class="w-full px-3 py-2 border rounded-lg border-gray-200 focus:ring-primary/20 focus:border-primary"
+                  bind:value={ambulatorioForm.specializzandoTitolo}
+                >
+                  <option value="Dott.">Dott.</option>
+                  <option value="Dott.ssa">Dott.ssa</option>
+                </select>
+              </div>
+              <Input
+                label="Medico specializzando"
+                placeholder="Nome e cognome"
+                bind:value={ambulatorioForm.specializzandoNome}
+              />
+            </div>
             <CVRiskFactors label="Fattori di rischio CV" bind:selectedFactors={ambulatorioForm.fattori} />
-            <RichTextArea
-              label="Anamnesi cardiologica"
-              placeholder="Inserisci l'anamnesi cardiologica..."
-              bind:value={ambulatorioForm.anamnesi}
-            />
-            <RichTextArea
-              label="APR"
-              placeholder="Note APR..."
-              bind:value={ambulatorioForm.apr}
-            />
-            <RichTextArea
-              label="Visita odierna"
-              placeholder="Esame obiettivo, sintomi, parametri rilevati..."
-              bind:value={ambulatorioForm.visita}
-            />
-            <RichTextArea
-              label="Conclusioni"
-              placeholder="Decisioni, piano terapeutico, follow-up..."
-              bind:value={ambulatorioForm.conclusioni}
-            />
+            <div class="space-y-2">
+              <label class="block text-sm font-semibold text-textPrimary">Anamnesi Patologica Remota</label>
+              <textarea
+                class="w-full min-h-[140px] px-3 py-2 border rounded-lg border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-surface text-textPrimary"
+                placeholder="Inserisci l'anamnesi patologica remota..."
+                bind:value={ambulatorioForm.anamnesi}
+              ></textarea>
+            </div>
+            <div class="space-y-2">
+              <label class="block text-sm font-semibold text-textPrimary">Terapia domiciliare</label>
+              <textarea
+                class="w-full min-h-[140px] px-3 py-2 border rounded-lg border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-surface text-textPrimary"
+                placeholder="Inserisci la terapia domiciliare..."
+                bind:value={ambulatorioForm.apr}
+              ></textarea>
+            </div>
+            <div class="space-y-2">
+              <label class="block text-sm font-semibold text-textPrimary">Visita odierna</label>
+              <textarea
+                class="w-full min-h-[140px] px-3 py-2 border rounded-lg border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-surface text-textPrimary"
+                placeholder="Esame obiettivo, sintomi, parametri rilevati..."
+                bind:value={ambulatorioForm.visita}
+              ></textarea>
+            </div>
+            <div class="space-y-2">
+              <label class="block text-sm font-semibold text-textPrimary">Conclusioni</label>
+              <textarea
+                class="w-full min-h-[140px] px-3 py-2 border rounded-lg border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-surface text-textPrimary"
+                placeholder="Decisioni, piano terapeutico, follow-up..."
+                bind:value={ambulatorioForm.conclusioni}
+              ></textarea>
+            </div>
             <div class="flex flex-wrap gap-3 justify-end">
               <Button variant="primary" size="sm" on:click={saveAmbulatorio} disabled={savingAmbulatorio || generatingReferto}>
                 {savingAmbulatorio ? 'Salvataggio...' : 'Salva sezione'}
@@ -1895,6 +1969,48 @@
               <Button variant="text" size="sm" on:click={cancelDelete}>Annulla</Button>
               <Button variant="danger" size="sm" on:click={confirmDelete} disabled={deletingPatient}>
                 {deletingPatient ? 'Eliminazione...' : 'Elimina'}
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </div>
+    {/if}
+
+    {#if showAmbulatorioStatusConfirm}
+      <div
+        class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+        on:click={cancelAmbulatorioStatusChange}
+        role="button"
+        tabindex="0"
+        on:keydown={(e) =>
+          (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && cancelAmbulatorioStatusChange()}
+      >
+        <div
+          class="max-w-md w-full"
+          on:click|stopPropagation
+          on:keydown|stopPropagation
+          role="dialog"
+          aria-modal="true"
+          tabindex="-1"
+        >
+          <Card padding="lg" class="bg-surface">
+            <div class="flex items-start gap-3">
+              <IconBadge icon="info" tone="secondary" />
+              <div>
+                <h3 class="text-lg font-semibold text-textPrimary">Cambiare stato paziente?</h3>
+                <p class="text-sm text-textSecondary mt-1">
+                  Vuoi cambiare lo stato del paziente
+                  <span class="font-semibold text-textPrimary">
+                    {patient.patient.nome} {patient.patient.cognome}
+                  </span>
+                  a &quot;In corso di accertamenti&quot;?
+                </p>
+              </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-6">
+              <Button variant="text" size="sm" on:click={cancelAmbulatorioStatusChange}>Non ora</Button>
+              <Button variant="primary" size="sm" on:click={confirmAmbulatorioStatusChange} disabled={changingStatusAfterReferto}>
+                {changingStatusAfterReferto ? 'Aggiornamento...' : 'Sì, cambia stato'}
               </Button>
             </div>
           </Card>
