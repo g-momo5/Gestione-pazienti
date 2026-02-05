@@ -130,6 +130,7 @@ pub struct Patient {
     pub email: Option<String>,
     pub provenienza: Option<String>,
     pub sesso: Option<String>,
+    pub priority: Option<String>,
     pub altezza: Option<f64>,  // cm
     pub peso: Option<f64>,     // kg
     pub note: Option<String>,

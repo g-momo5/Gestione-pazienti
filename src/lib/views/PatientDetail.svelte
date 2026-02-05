@@ -36,6 +36,11 @@
     { value: 'TAVI eseguita', label: 'TAVI eseguita' },
   ];
   const ELIGIBLE_TAVI_STATUSES = ['In attesa di TAVI', 'TAVI eseguita'];
+  const PRIORITY_OPTIONS = [
+    { value: 'alta', label: 'Alta (entro 1 mese)' },
+    { value: 'media', label: 'Media (entro 3 mesi)' },
+    { value: 'bassa', label: 'Bassa (oltre 3 mesi)' },
+  ];
 
   const ECG_OPTIONS = [
     { id: 'ecgRitmoSinusale', label: 'Ritmo sinusale' },
@@ -125,6 +130,7 @@
     cognome: '',
     data_nascita: '',
     sesso: 'M',
+    priority: 'media',
     luogo_nascita: '',
     luogo_nascita_codice: '',
     codice_fiscale: '',
@@ -661,6 +667,7 @@
       email: normalizeText(anagraficaForm.email),
       provenienza: normalizeText(anagraficaForm.provenienza),
       sesso: normalizeText(anagraficaForm.sesso),
+      priority: normalizeText(anagraficaForm.priority),
       altezza: normalizeNumber(antropometricForm.altezza),
       peso: normalizeNumber(antropometricForm.peso),
     };
@@ -1132,6 +1139,7 @@
       cognome: capitalizeWordsStrict(patient.patient.cognome || ''),
       data_nascita: patient.patient.data_nascita || '',
       sesso: patient.patient.sesso || 'M',
+      priority: patient.patient.priority || 'media',
       luogo_nascita: patient.patient.luogo_nascita || '',
       luogo_nascita_codice: findPlaceCode(patient.patient.luogo_nascita || ''),
       codice_fiscale: patient.patient.codice_fiscale || '',
@@ -1417,6 +1425,11 @@
                   </label>
                 </div>
               </div>
+              <Select
+                label="Priorità"
+                options={PRIORITY_OPTIONS}
+                bind:value={anagraficaForm.priority}
+              />
               <Input label="Codice fiscale" bind:value={anagraficaForm.codice_fiscale} />
               <Input label="Telefono" type="tel" bind:value={anagraficaForm.telefono} />
               <Input label="Email" type="email" bind:value={anagraficaForm.email} />

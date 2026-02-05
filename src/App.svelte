@@ -4,6 +4,7 @@
   import Button from './lib/components/ui/Button.svelte';
   import Card from './lib/components/ui/Card.svelte';
   import Input from './lib/components/ui/Input.svelte';
+  import Select from './lib/components/ui/Select.svelte';
   import Checkbox from './lib/components/ui/Checkbox.svelte';
   import IconBadge from './lib/components/ui/IconBadge.svelte';
   import PatientDetail from './lib/views/PatientDetail.svelte';
@@ -38,6 +39,11 @@
     'In corso di accertamenti',
     'In attesa di TAVI',
   ]);
+  const PRIORITY_OPTIONS = [
+    { value: 'alta', label: 'Alta (entro 1 mese)' },
+    { value: 'media', label: 'Media (entro 3 mesi)' },
+    { value: 'bassa', label: 'Bassa (oltre 3 mesi)' },
+  ];
 
   let currentView = 'home';
   let mainScrollEl;
@@ -60,6 +66,7 @@
     cognome: '',
     data_nascita: '',
     sesso: 'M',
+    priority: 'media',
     luogo_nascita: '',
     luogo_nascita_codice: '',
     codice_fiscale: '',
@@ -478,6 +485,14 @@
     return colors[status] || 'bg-gray-100 text-gray-800';
   }
 
+  function getPriorityInfo(value) {
+    const key = (value || '').toLowerCase();
+    if (key === 'alta') return { label: 'Alta', class: 'bg-red-100 text-red-800' };
+    if (key === 'media') return { label: 'Media', class: 'bg-amber-100 text-amber-800' };
+    if (key === 'bassa') return { label: 'Bassa', class: 'bg-green-100 text-green-800' };
+    return null;
+  }
+
   $: totalPatients =
     statusCountsValue.length > 0
       ? statusCountsValue.reduce((sum, item) => sum + (item.count || 0), 0)
@@ -666,6 +681,7 @@
       cognome: '',
       data_nascita: '',
       sesso: 'M',
+      priority: 'media',
       luogo_nascita: '',
       luogo_nascita_codice: '',
       codice_fiscale: '',
@@ -725,6 +741,7 @@
       email: normalize(newPatientForm.email),
       provenienza: normalize(newPatientForm.provenienza),
       sesso: newPatientForm.sesso || null,
+      priority: normalize(newPatientForm.priority),
       data_tavi: normalize(newPatientForm.data_tavi),
       note: normalize(newPatientForm.note),
     };
@@ -850,29 +867,32 @@
                 Nessun paziente in questo stato
               </div>
             {:else}
-              <div class="overflow-x-auto">
+              <div class="overflow-auto max-h-[280px]">
                 <table class="w-full">
                   <thead class="bg-surface-strong border-b border-gray-200">
                     <tr>
-                      <th class="px-4 py-3 text-left text-xs font-medium text-textSecondary uppercase tracking-wider w-16">
+                      <th class="px-3 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider w-14">
                         Note
                       </th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
                         Paziente
                       </th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                        Priorità
+                      </th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
                         Età
                       </th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
                         Data Nascita
                       </th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
                         Provenienza
                       </th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
                         Inserito il
                       </th>
-                      <th class="px-6 py-3 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
                         Telefono
                       </th>
                     </tr>
@@ -883,17 +903,17 @@
                         on:click={() => openPatient(patient)}
                         class="hover:bg-surface-stronger cursor-pointer transition-colors"
                       >
-                        <td class="px-4 py-4 whitespace-nowrap">
+                        <td class="px-3 py-2 whitespace-nowrap">
                           <button
                             type="button"
-                            class="p-2 rounded-full hover:bg-primary/10 transition focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            class="p-1.5 rounded-full hover:bg-primary/10 transition focus:outline-none focus:ring-2 focus:ring-primary/30"
                             on:click|stopPropagation={() => openNoteModal(patient)}
                             aria-label="Note paziente"
                           >
                             <IconBadge icon="note" tone={patient.patient?.note ? 'primary' : 'neutral'} />
                           </button>
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
+                        <td class="px-4 py-2 whitespace-nowrap">
                           <div class="font-medium text-textPrimary">
                             {patient.patient?.nome} {patient.patient?.cognome}
                           </div>
@@ -903,23 +923,33 @@
                             </div>
                           {/if}
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-textSecondary">
+                        <td class="px-4 py-2 whitespace-nowrap">
+                          {#if getPriorityInfo(patient.patient?.priority)}
+                            {@const pr = getPriorityInfo(patient.patient?.priority)}
+                            <span class={`px-2.5 py-1 rounded-full text-xs font-medium ${pr.class}`}>
+                              {pr.label}
+                            </span>
+                          {:else}
+                            <span class="text-textSecondary">-</span>
+                          {/if}
+                        </td>
+                        <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
                           {#if patient.patient?.data_nascita}
                             {calculateAge(patient.patient?.data_nascita)} anni
                           {:else}
                             -
                           {/if}
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-textSecondary">
+                        <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
                           {formatDateIT(patient.patient?.data_nascita)}
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-textSecondary">
+                        <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
                           {patient.patient?.provenienza || '-'}
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-textSecondary">
+                        <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
                           {formatDateIT(patient.status_created_at?.split(' ')[0])}
                         </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-textSecondary">
+                        <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
                           {patient.patient?.telefono || '-'}
                         </td>
                       </tr>
@@ -935,10 +965,6 @@
       {#if noteModalOpen}
         <div
           class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-          on:click={(e) => e.target === e.currentTarget && closeNoteModal()}
-          role="button"
-          tabindex="0"
-          on:keydown={(e) => (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && closeNoteModal()}
         >
           <div
             class="bg-surface rounded-xl shadow-xl w-full max-w-lg overflow-hidden"
@@ -1119,11 +1145,6 @@
 {#if showNewPatientModal}
   <div
     class="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-40"
-    on:click={closeNewPatientModal}
-    role="button"
-    tabindex="0"
-    on:keydown={(e) =>
-      (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') && closeNewPatientModal()}
   >
     <Card
       padding="lg"
@@ -1232,6 +1253,11 @@
             </label>
           </div>
         </div>
+        <Select
+          label="Priorità"
+          options={PRIORITY_OPTIONS}
+          bind:value={newPatientForm.priority}
+        />
         <Input
           label="Codice fiscale"
           placeholder="MRARSS80A01H501U"

@@ -88,6 +88,7 @@ impl Database {
                 email TEXT,
                 provenienza TEXT,
                 sesso TEXT,
+                priority TEXT,
                 altezza REAL,
                 peso REAL,
                 note TEXT,
@@ -136,6 +137,7 @@ impl Database {
         )?;
         // Migrazione soft per db esistenti: ignora errore se la colonna esiste già
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN sesso TEXT", []);
+        let _ = conn.execute("ALTER TABLE patients ADD COLUMN priority TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN altezza REAL", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN peso REAL", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN note TEXT", []);
@@ -583,11 +585,12 @@ impl Database {
                 procedurale_anestesia, procedurale_coronarografia, procedurale_coronarografia_note, procedurale_pacemaker, procedurale_pacemaker_note,
                 procedurale_accesso_principale_fem, procedurale_accesso_principale_altro, procedurale_accesso_protezione, procedurale_accesso_protezione_note,
                 procedurale_altri_accessi, procedurale_diametro_pallone_femorale, procedurale_guida_safari, procedurale_protezione_osti,
-                procedurale_valvuloplastica, procedurale_valvuloplastica_note, procedurale_bioprotesi_modello, procedurale_bioprotesi_dimensione
+                procedurale_valvuloplastica, procedurale_valvuloplastica_note, procedurale_bioprotesi_modello, procedurale_bioprotesi_dimensione,
+                priority
             )
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
                      ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33,
-                     ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52)",
+                     ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52, ?53)",
             params![
                 patient.nome,
                 patient.cognome,
@@ -641,6 +644,7 @@ impl Database {
                 patient.procedurale_valvuloplastica_note,
                 patient.procedurale_bioprotesi_modello,
                 patient.procedurale_bioprotesi_dimensione,
+                patient.priority,
             ],
         );
 
@@ -698,8 +702,9 @@ impl Database {
                 procedurale_guida_safari = ?47, procedurale_protezione_osti = ?48,
                 procedurale_valvuloplastica = ?49, procedurale_valvuloplastica_note = ?50,
                 procedurale_bioprotesi_modello = ?51, procedurale_bioprotesi_dimensione = ?52,
+                priority = ?53,
                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?53",
+             WHERE id = ?54",
             params![
                 patient.nome,
                 patient.cognome,
@@ -753,6 +758,7 @@ impl Database {
                 patient.procedurale_valvuloplastica_note,
                 patient.procedurale_bioprotesi_modello,
                 patient.procedurale_bioprotesi_dimensione,
+                patient.priority,
                 id,
             ],
         ).map_err(|e| e.to_string())?;
@@ -836,6 +842,7 @@ impl Database {
                     email: row.get("email").ok(),
                     provenienza: row.get("provenienza").ok(),
                     sesso: row.get("sesso").ok(),
+                    priority: row.get("priority").ok(),
                     altezza: row.get("altezza").ok(),
                     peso: row.get("peso").ok(),
                     note: row.get("note").ok(),
