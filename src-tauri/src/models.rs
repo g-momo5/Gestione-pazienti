@@ -143,6 +143,7 @@ pub struct Patient {
     pub medico_nome: Option<String>,
     pub medico_specializzando_titolo: Option<String>,
     pub medico_specializzando_nome: Option<String>,
+    pub ambulatorio_data_visita: Option<String>,
     pub procedurale_allergia_mdc: Option<String>,
     pub procedurale_preparazione_mdc: Option<String>,
     pub procedurale_creatinina: Option<String>,

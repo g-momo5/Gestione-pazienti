@@ -715,7 +715,12 @@ pub async fn generate_ambulatorio_referto(
         .ok_or_else(|| "Paziente non trovato".to_string())?;
 
     let p = patient.patient;
-    let visit_date = Local::now().format("%d/%m/%Y").to_string();
+    let visit_date = p
+        .ambulatorio_data_visita
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(format_date_ita)
+        .unwrap_or_else(|| Local::now().format("%d/%m/%Y").to_string());
 
     let sig_sigra = match p.sesso.as_deref() {
         Some("F") | Some("f") => "Sig.ra".to_string(),

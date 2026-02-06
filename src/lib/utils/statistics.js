@@ -21,6 +21,31 @@ export function calculateBSA(peso, altezza) {
 }
 
 /**
+ * Calcola eGFR con formula CKD-EPI 2021 (creatinina, senza fattore razziale)
+ * creatinina in mg/dL, età in anni, sesso 'M'/'F'
+ */
+export function calculateEgfrCkdEpi(creatinina, age, sex) {
+  if (creatinina === null || creatinina === undefined || isNaN(creatinina)) return null;
+  if (!age || isNaN(age)) return null;
+  const scr = Number(creatinina);
+  const ageYears = Number(age);
+  if (scr <= 0 || ageYears <= 0) return null;
+
+  const isFemale = String(sex || '').toUpperCase() === 'F';
+  const kappa = isFemale ? 0.7 : 0.9;
+  const alpha = isFemale ? -0.241 : -0.302;
+
+  const ratio = scr / kappa;
+  const min = Math.min(ratio, 1);
+  const max = Math.max(ratio, 1);
+
+  let egfr = 142 * Math.pow(min, alpha) * Math.pow(max, -1.2) * Math.pow(0.9938, ageYears);
+  if (isFemale) egfr *= 1.012;
+
+  return Math.round(egfr); // ml/min/1.73m² arrotondato
+}
+
+/**
  * Restituisce una categoria BMI testuale
  */
 export function categorizeBMI(bmi) {

@@ -10,7 +10,7 @@
   import SectionPanel from '../components/ui/SectionPanel.svelte';
   import { formatDateIT, calculateAge } from '../utils/dateUtils.js';
   import { tick } from 'svelte';
-  import { calculateBMI, calculateBSA, categorizeBMI, formatNumberIT } from '../utils/statistics.js';
+  import { calculateBMI, calculateBSA, categorizeBMI, formatNumberIT, calculateEgfrCkdEpi } from '../utils/statistics.js';
   import { changePatientStatus, loadPatient, updatePatient, deletePatient } from '../stores/patientStore.js';
   import { showToast } from '../stores/toastStore.js';
   import { loadPlaces } from '../utils/placeSuggestions.js';
@@ -60,7 +60,7 @@
 
   const VALVOLE_TAVI = [
     { value: 'edwards_sapien_3', label: 'Edwards Sapien 3', sizes: ['20', '23', '26', '29'] },
-    { value: 'edwards_sapien_3_ultra', label: 'Edwards Sapien 3 Ultra', sizes: ['20', '23', '26', '29'] },
+    { value: 'edwards_sapien_3_ultra', label: 'Edwards Sapien 3 Ultra', sizes: ['20', '23', '26'] },
     { value: 'medtronic_evolut_pro', label: 'Medtronic Evolut PRO / PRO+', sizes: ['23', '26', '29', '34'] },
     { value: 'medtronic_evolut_r', label: 'Medtronic Evolut R', sizes: ['23', '26', '29', '34'] },
     { value: 'boston_accurate_neo2', label: 'Boston Acurate neo2', sizes: ['S (23)', 'M (25)', 'L (27)'] },
@@ -146,6 +146,7 @@
   let savingAntropometrici = false;
   let ambulatorioForm = {
     fattori: [],
+    dataVisita: '',
     anamnesi: '',
     apr: '',
     visita: '',
@@ -159,7 +160,7 @@
   let schedaProceduraleForm = {
     peso: '',
     altezza: '',
-    allergiaMdc: 'no',
+    allergiaMdc: '',
     creatinina: '',
     egfr: '',
     hb: '',
@@ -174,17 +175,17 @@
     anestesia: '',
     coronarografia: '',
     coronarografiaNote: '',
-    pacemaker: 'no',
+    pacemaker: '',
     pacemakerNote: '',
     accessoPrincipaleFem: '',
     accessoPrincipaleAltro: '',
-  accessoProtezione: 'no',
+  accessoProtezione: '',
   accessoProtezioneNote: '',
   altriAccessi: '',
   diametroPalloneFemorale: '',
   guidaSafari: '',
-  protezioneOsti: 'no',
-  valvuloplastica: 'no',
+  protezioneOsti: '',
+  valvuloplastica: '',
   valvuloplasticaNote: '',
   bioprotesiModello: '',
   bioprotesiDimensione: '',
@@ -240,6 +241,7 @@
     if (!patient?.patient) {
       ambulatorioForm = {
         fattori: [],
+        dataVisita: '',
         anamnesi: '',
         apr: '',
         visita: '',
@@ -254,6 +256,7 @@
 
     ambulatorioForm = {
       fattori: patient.patient.ambulatorio_fattori || [],
+      dataVisita: patient.patient.ambulatorio_data_visita || '',
       anamnesi: stripFormatting(patient.patient.anamnesi_cardiologica || ''),
       apr: stripFormatting(patient.patient.apr || ''),
       visita: stripFormatting(patient.patient.visita_odierna || ''),
@@ -270,7 +273,7 @@
     schedaProceduraleForm = {
       peso: '',
       altezza: '',
-      allergiaMdc: 'no',
+      allergiaMdc: '',
       creatinina: '',
       egfr: '',
       hb: '',
@@ -285,17 +288,17 @@
         anestesia: '',
         coronarografia: '',
         coronarografiaNote: '',
-        pacemaker: 'no',
+        pacemaker: '',
         pacemakerNote: '',
         accessoPrincipaleFem: '',
         accessoPrincipaleAltro: '',
-      accessoProtezione: 'no',
+      accessoProtezione: '',
       accessoProtezioneNote: '',
       altriAccessi: '',
       diametroPalloneFemorale: '',
       guidaSafari: '',
-      protezioneOsti: 'no',
-      valvuloplastica: 'no',
+      protezioneOsti: '',
+      valvuloplastica: '',
       valvuloplasticaNote: '',
       bioprotesiModello: '',
       bioprotesiDimensione: '',
@@ -306,7 +309,7 @@
     schedaProceduraleForm = {
       peso: patient.patient.peso ?? '',
       altezza: patient.patient.altezza ?? '',
-      allergiaMdc: patient.patient.procedurale_allergia_mdc || 'no',
+      allergiaMdc: patient.patient.procedurale_allergia_mdc || '',
       creatinina: patient.patient.procedurale_creatinina || '',
       egfr: patient.patient.procedurale_egfr || '',
       hb: patient.patient.procedurale_hb || '',
@@ -321,17 +324,17 @@
       anestesia: patient.patient.procedurale_anestesia || '',
       coronarografia: patient.patient.procedurale_coronarografia || '',
       coronarografiaNote: patient.patient.procedurale_coronarografia_note || '',
-      pacemaker: patient.patient.procedurale_pacemaker || 'no',
+      pacemaker: patient.patient.procedurale_pacemaker || '',
       pacemakerNote: patient.patient.procedurale_pacemaker_note || '',
       accessoPrincipaleFem: patient.patient.procedurale_accesso_principale_fem || '',
       accessoPrincipaleAltro: patient.patient.procedurale_accesso_principale_altro || '',
-      accessoProtezione: patient.patient.procedurale_accesso_protezione || 'no',
+      accessoProtezione: patient.patient.procedurale_accesso_protezione || '',
       accessoProtezioneNote: patient.patient.procedurale_accesso_protezione_note || '',
       altriAccessi: patient.patient.procedurale_altri_accessi || '',
       diametroPalloneFemorale: patient.patient.procedurale_diametro_pallone_femorale || '',
       guidaSafari: patient.patient.procedurale_guida_safari || '',
-      protezioneOsti: patient.patient.procedurale_protezione_osti || 'no',
-      valvuloplastica: patient.patient.procedurale_valvuloplastica || 'no',
+      protezioneOsti: patient.patient.procedurale_protezione_osti || '',
+      valvuloplastica: patient.patient.procedurale_valvuloplastica || '',
       valvuloplasticaNote: patient.patient.procedurale_valvuloplastica_note || '',
       bioprotesiModello: patient.patient.procedurale_bioprotesi_modello || '',
       bioprotesiDimensione: patient.patient.procedurale_bioprotesi_dimensione || '',
@@ -407,6 +410,22 @@
   $: bmiCategory = categorizeBMI(bmiValue);
   $: bioprotesiSizeOptions = getValveSizes(schedaProceduraleForm.bioprotesiModello);
   $: eligibleForTavi = ELIGIBLE_TAVI_STATUSES.includes(statusSelection || patient?.status || '');
+
+  $: {
+    const creat = normalizeNumber(schedaProceduraleForm.creatinina);
+    const sex = anagraficaForm.sesso || patient?.patient?.sesso;
+    const egfrCalc = calculateEgfrCkdEpi(creat, patientAge, sex);
+    if (egfrCalc !== null && egfrCalc !== undefined) {
+      const next = String(egfrCalc);
+      if (schedaProceduraleForm.egfr !== next) {
+        schedaProceduraleForm.egfr = next;
+      }
+    } else if (!schedaProceduraleForm.creatinina) {
+      if (schedaProceduraleForm.egfr !== '') {
+        schedaProceduraleForm.egfr = '';
+      }
+    }
+  }
 
   async function handleStatusChange() {
     if (!patient?.patient?.id) return;
@@ -756,9 +775,10 @@
     if (!patient?.patient?.id) return false;
     savingAmbulatorio = true;
 
-    const payload = {
+      const payload = {
       ...patient.patient,
       ambulatorio_fattori: ambulatorioForm.fattori,
+      ambulatorio_data_visita: normalizeText(ambulatorioForm.dataVisita),
       anamnesi_cardiologica: normalizePlainText(ambulatorioForm.anamnesi),
       apr: normalizePlainText(ambulatorioForm.apr),
       visita_odierna: normalizePlainText(ambulatorioForm.visita),
@@ -789,8 +809,8 @@
 
     const payload = {
       ...patient.patient,
-      peso: normalizeNumber(schedaProceduraleForm.peso),
-      altezza: normalizeNumber(schedaProceduraleForm.altezza),
+      peso: normalizeNumber(antropometricForm.peso),
+      altezza: normalizeNumber(antropometricForm.altezza),
       procedurale_allergia_mdc: schedaProceduraleForm.allergiaMdc,
       procedurale_creatinina: normalizeText(schedaProceduraleForm.creatinina),
       procedurale_egfr: normalizeText(schedaProceduraleForm.egfr),
@@ -1153,6 +1173,7 @@
     };
     ambulatorioForm = {
       fattori: patient.patient.ambulatorio_fattori || [],
+      dataVisita: patient.patient.ambulatorio_data_visita || '',
       anamnesi: stripFormatting(patient.patient.anamnesi_cardiologica || ''),
       apr: stripFormatting(patient.patient.apr || ''),
       visita: stripFormatting(patient.patient.visita_odierna || ''),
@@ -1549,6 +1570,13 @@
                 bind:value={ambulatorioForm.specializzandoNome}
               />
             </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input
+                label="Data visita ambulatorio"
+                type="date"
+                bind:value={ambulatorioForm.dataVisita}
+              />
+            </div>
             <CVRiskFactors label="Fattori di rischio CV" bind:selectedFactors={ambulatorioForm.fattori} />
             <div class="space-y-2">
               <label class="block text-sm font-semibold text-textPrimary">Anamnesi Patologica Remota</label>
@@ -1596,8 +1624,8 @@
         <SectionPanel title="Scheda procedurale" icon="activity" collapsed={true}>
           <div class="space-y-4">
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <Input label="Peso (Kg)" type="number" min="0" bind:value={schedaProceduraleForm.peso} />
-              <Input label="Altezza (cm)" type="number" min="0" bind:value={schedaProceduraleForm.altezza} />
+              <Input label="Peso (Kg)" type="number" min="0" bind:value={antropometricForm.peso} />
+              <Input label="Altezza (cm)" type="number" min="0" bind:value={antropometricForm.altezza} />
               <div class="flex flex-col justify-center">
                 <p class="text-sm font-semibold text-textPrimary mb-2">Allergia al mdc</p>
                 <div class="flex items-center gap-4">
