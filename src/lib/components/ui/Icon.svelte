@@ -1,5 +1,6 @@
 <script>
   import {
+    IconChevronLeft,
     IconChevronRight,
     IconActivity,
     IconAlertTriangle,
@@ -41,6 +42,7 @@
   export { className as class };
 
   const icons = {
+    chevronLeft: IconChevronLeft,
     list: IconListDetails,
     clipboard: IconClipboardList,
     chevronRight: IconChevronRight,

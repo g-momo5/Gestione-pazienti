@@ -2,6 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .date-field {
+    @apply h-10;
+  }
+
+  .status-grid select,
+  .status-grid input {
+    @apply h-10;
+  }
+}
+
 /* Custom global styles */
 @layer base {
   body {

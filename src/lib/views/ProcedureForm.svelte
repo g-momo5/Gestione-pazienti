@@ -1,6 +1,8 @@
 <script>
   import { onMount } from 'svelte';
   import Input from '../components/ui/Input.svelte';
+  import MaskedDateInput from '../components/ui/MaskedDateInput.svelte';
+  import MaskedTimeInput from '../components/ui/MaskedTimeInput.svelte';
   import Select from '../components/ui/Select.svelte';
   import Checkbox from '../components/ui/Checkbox.svelte';
   import Button from '../components/ui/Button.svelte';
@@ -52,6 +54,10 @@
   };
 
   let errors = {};
+  let dataNascitaInvalid = false;
+  let dataProceduraInvalid = false;
+  let oraInizioInvalid = false;
+  let oraFineInvalid = false;
   let saving = false;
   let successMessage = '';
   let duration = null;
@@ -92,6 +98,13 @@
   async function handleSubmit() {
     // Valida form
     errors = {};
+    if (dataNascitaInvalid) errors.data_nascita = ERROR_MESSAGES.invalidDate;
+    if (dataProceduraInvalid) errors.data_procedura = ERROR_MESSAGES.invalidDate;
+    if (oraInizioInvalid) errors.ora_inizio = ERROR_MESSAGES.invalidTime;
+    if (oraFineInvalid) errors.ora_fine = ERROR_MESSAGES.invalidTime;
+    if (Object.keys(errors).length > 0) {
+      return;
+    }
     const validationErrors = validateProcedureForm(formData);
 
     if (validationErrors) {
@@ -235,10 +248,10 @@
           error={errors.cognome}
         />
 
-        <Input
+        <MaskedDateInput
           label="Data di Nascita"
-          type="date"
           bind:value={formData.data_nascita}
+          bind:invalid={dataNascitaInvalid}
           required
           error={errors.data_nascita}
         />
@@ -274,26 +287,26 @@
       <SectionHeader icon="🕐" title="Dati Temporali" />
 
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Input
+        <MaskedDateInput
           label="Data Procedura"
-          type="date"
           bind:value={formData.data_procedura}
+          bind:invalid={dataProceduraInvalid}
           required
           error={errors.data_procedura}
         />
 
-        <Input
+        <MaskedTimeInput
           label="Ora Inizio"
-          type="time"
           bind:value={formData.ora_inizio}
+          bind:invalid={oraInizioInvalid}
           required
           error={errors.ora_inizio}
         />
 
-        <Input
+        <MaskedTimeInput
           label="Ora Fine"
-          type="time"
           bind:value={formData.ora_fine}
+          bind:invalid={oraFineInvalid}
           required
           error={errors.ora_fine}
         />

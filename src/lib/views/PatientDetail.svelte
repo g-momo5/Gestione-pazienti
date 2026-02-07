@@ -4,9 +4,13 @@
   import Select from '../components/ui/Select.svelte';
   import Checkbox from '../components/ui/Checkbox.svelte';
   import Input from '../components/ui/Input.svelte';
+  import MaskedDateInput from '../components/ui/MaskedDateInput.svelte';
+  import MaskedTimeInput from '../components/ui/MaskedTimeInput.svelte';
   import RichTextArea from '../components/ui/RichTextArea.svelte';
+  import PresetTextArea from '../components/ui/PresetTextArea.svelte';
   import CVRiskFactors from '../components/ui/CVRiskFactors.svelte';
   import IconBadge from '../components/ui/IconBadge.svelte';
+  import Icon from '../components/ui/Icon.svelte';
   import SectionPanel from '../components/ui/SectionPanel.svelte';
   import { formatDateIT, calculateAge } from '../utils/dateUtils.js';
   import { tick } from 'svelte';
@@ -147,6 +151,7 @@
   let ambulatorioForm = {
     fattori: [],
     dataVisita: '',
+    oraVisita: '',
     anamnesi: '',
     apr: '',
     visita: '',
@@ -212,10 +217,11 @@
   let changingStatusAfterReferto = false;
   const PLACE_DATA = loadPlaces();
   let placeData = PLACE_DATA;
-  let showProvSuggestions = false;
   let showLuogoSuggestions = false;
   let anagraficaDateDisplay = '';
   let anagraficaDateError = '';
+  let ambulatorioDateInvalid = false;
+  let ambulatorioTimeInvalid = false;
 
   function loadChecklistFromStorage(id) {
     const saved = localStorage.getItem(`patient-checklist-${id}`);
@@ -242,6 +248,7 @@
       ambulatorioForm = {
         fattori: [],
         dataVisita: '',
+        oraVisita: '',
         anamnesi: '',
         apr: '',
         visita: '',
@@ -257,6 +264,7 @@
     ambulatorioForm = {
       fattori: patient.patient.ambulatorio_fattori || [],
       dataVisita: patient.patient.ambulatorio_data_visita || '',
+      oraVisita: patient.patient.ambulatorio_orario_visita || '',
       anamnesi: stripFormatting(patient.patient.anamnesi_cardiologica || ''),
       apr: stripFormatting(patient.patient.apr || ''),
       visita: stripFormatting(patient.patient.visita_odierna || ''),
@@ -410,6 +418,7 @@
   $: bmiCategory = categorizeBMI(bmiValue);
   $: bioprotesiSizeOptions = getValveSizes(schedaProceduraleForm.bioprotesiModello);
   $: eligibleForTavi = ELIGIBLE_TAVI_STATUSES.includes(statusSelection || patient?.status || '');
+  $: isDaValutare = (statusSelection || patient?.status || '') === 'Da valutare';
 
   $: {
     const creat = normalizeNumber(schedaProceduraleForm.creatinina);
@@ -779,6 +788,7 @@
       ...patient.patient,
       ambulatorio_fattori: ambulatorioForm.fattori,
       ambulatorio_data_visita: normalizeText(ambulatorioForm.dataVisita),
+      ambulatorio_orario_visita: normalizeText(ambulatorioForm.oraVisita),
       anamnesi_cardiologica: normalizePlainText(ambulatorioForm.anamnesi),
       apr: normalizePlainText(ambulatorioForm.apr),
       visita_odierna: normalizePlainText(ambulatorioForm.visita),
@@ -801,6 +811,27 @@
     } finally {
       savingAmbulatorio = false;
     }
+  }
+
+  async function saveAmbulatorioAppointment() {
+    if (!isDaValutare) return false;
+    if (!ambulatorioForm.dataVisita) {
+      showToast('Inserisci la data dell\'appuntamento', 'warning');
+      return false;
+    }
+    if (ambulatorioDateInvalid) {
+      showToast('Data appuntamento non valida', 'warning');
+      return false;
+    }
+    if (!ambulatorioForm.oraVisita) {
+      showToast('Inserisci l\'orario dell\'appuntamento', 'warning');
+      return false;
+    }
+    if (ambulatorioTimeInvalid) {
+      showToast('Orario appuntamento non valido', 'warning');
+      return false;
+    }
+    return await saveAmbulatorio();
   }
 
   async function saveSchedaProcedurale() {
@@ -1174,6 +1205,7 @@
     ambulatorioForm = {
       fattori: patient.patient.ambulatorio_fattori || [],
       dataVisita: patient.patient.ambulatorio_data_visita || '',
+      oraVisita: patient.patient.ambulatorio_orario_visita || '',
       anamnesi: stripFormatting(patient.patient.anamnesi_cardiologica || ''),
       apr: stripFormatting(patient.patient.apr || ''),
       visita: stripFormatting(patient.patient.visita_odierna || ''),
@@ -1217,10 +1249,10 @@
         <button
           type="button"
           on:click={onBack}
-          class="w-9 h-9 rounded-full border border-gray-200 bg-surface text-textPrimary hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1"
+          class="w-9 h-9 rounded-full border-2 border-textPrimary bg-surface text-textPrimary hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1"
           aria-label="Torna alla home"
         >
-          ←
+          <Icon name="chevronLeft" size={24} class="text-textPrimary" />
         </button>
         <IconBadge icon="user" size="lg" tone="primary" class="mt-1" />
         <div>
@@ -1259,38 +1291,82 @@
         </Button>
       </div>
 
-      <div class="w-full max-w-xs space-y-2">
-        <Select
-          label="Aggiorna stato"
-          bind:value={statusSelection}
-          options={STATUS_OPTIONS}
-          placeholder="Seleziona stato"
-        />
-        <Button
-          variant="primary"
-          fullWidth
-          disabled={savingStatus || statusSelection === patient.status}
-          on:click={handleStatusChange}
-        >
-          {savingStatus ? 'Aggiornamento...' : 'Salva nuovo stato'}
-        </Button>
-        {#if eligibleForTavi}
-          <Input
-            type="date"
-            label="Data TAVI programmata"
-            bind:value={taviDate}
-            max={todayIso}
-          />
-          <Button
-            variant="secondary"
-            fullWidth
-            size="sm"
-            disabled={savingTaviDate}
-            on:click={saveTaviDate}
-          >
-            {savingTaviDate ? 'Salvataggio...' : 'Salva data TAVI'}
-          </Button>
-        {/if}
+      <div class="w-full max-w-xl space-y-2 status-grid">
+        <div class="grid grid-cols-2 gap-4 items-start">
+          <div class="text-sm font-semibold text-textPrimary">Aggiorna stato</div>
+          <div class="text-sm font-semibold text-textPrimary">
+            {#if isDaValutare}
+              Data ambulatorio strutturale
+            {:else if eligibleForTavi}
+              Data TAVI
+            {:else}
+              Data
+            {/if}
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <Select
+              label=""
+              bind:value={statusSelection}
+              options={STATUS_OPTIONS}
+              placeholder="Stato selezionato"
+            />
+            <Button
+              variant="primary"
+              fullWidth
+              size="compact"
+              disabled={savingStatus || statusSelection === patient.status}
+              on:click={handleStatusChange}
+            >
+              {savingStatus ? 'Aggiornamento...' : 'Salva nuovo stato'}
+            </Button>
+          </div>
+          <div class="flex flex-col gap-2">
+            {#if isDaValutare}
+              <div class="grid grid-cols-2 gap-2">
+                <MaskedDateInput
+                  label=""
+                  bind:value={ambulatorioForm.dataVisita}
+                  bind:invalid={ambulatorioDateInvalid}
+                />
+                <MaskedTimeInput
+                  label=""
+                  bind:value={ambulatorioForm.oraVisita}
+                  bind:invalid={ambulatorioTimeInvalid}
+                />
+              </div>
+              <Button
+                variant="secondary"
+                fullWidth
+                size="compact"
+                disabled={savingAmbulatorio}
+                on:click={saveAmbulatorioAppointment}
+              >
+                {savingAmbulatorio ? 'Salvataggio...' : 'Salva appuntamento'}
+              </Button>
+            {:else if eligibleForTavi}
+              <MaskedDateInput
+                label=""
+                bind:value={taviDate}
+                maxDate={todayIso}
+              />
+              <Button
+                variant="secondary"
+                fullWidth
+                size="compact"
+                disabled={savingTaviDate}
+                on:click={saveTaviDate}
+              >
+                {savingTaviDate ? 'Salvataggio...' : 'Salva data TAVI'}
+              </Button>
+            {:else}
+              <div class="h-10 rounded-lg border border-dashed border-gray-200 bg-surface-strong text-textSecondary flex items-center justify-center text-xs">
+                Nessuna data
+              </div>
+              <div class="h-10"></div>
+            {/if}
+          </div>
+        </div>
         <p class="text-xs text-textSecondary">
           Ultimo aggiornamento: {formatDateIT(patient.status_created_at?.split(' ')[0])}
         </p>
@@ -1388,6 +1464,7 @@
                   placeholder="gg/mm/aaaa"
                   bind:value={anagraficaDateDisplay}
                   on:input={(e) => handleDetailDateInput(e.detail?.target?.value || '')}
+                  className="date-field"
                   error={anagraficaDateError}
                 />
               </div>
@@ -1459,26 +1536,7 @@
                   label="Provenienza (cardiologo/ospedale)"
                   placeholder="Cardiologo o ospedale di provenienza"
                   bind:value={anagraficaForm.provenienza}
-                  on:focus={() => (showProvSuggestions = true)}
-                  on:input={() => (showProvSuggestions = true)}
-                  on:blur={() => setTimeout(() => (showProvSuggestions = false), 120)}
                 />
-                {#if showProvSuggestions && filterPlaces(anagraficaForm.provenienza).length}
-                  <div class="absolute z-30 mt-1 w-full bg-surface border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {#each filterPlaces(anagraficaForm.provenienza) as suggestion}
-                      <button
-                        type="button"
-                        class="w-full text-left px-3 py-2 text-sm hover:bg-surface-stronger"
-                        on:click={() => {
-                          anagraficaForm.provenienza = suggestion.label;
-                          showProvSuggestions = false;
-                        }}
-                      >
-                        {suggestion.label}
-                      </button>
-                    {/each}
-                  </div>
-                {/if}
               </div>
             </div>
             <div class="flex justify-end gap-2">
@@ -1535,17 +1593,15 @@
         <SectionPanel title="Ambulatorio strutturale" icon="clipboard" collapsed={true}>
           <div class="space-y-4">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-textPrimary mb-1" for="ambulatorioMedicoTitolo">Titolo medico</label>
-                <select
-                  id="ambulatorioMedicoTitolo"
-                  class="w-full px-3 py-2 border rounded-lg border-gray-200 focus:ring-primary/20 focus:border-primary"
-                  bind:value={ambulatorioForm.medicoTitolo}
-                >
-                  <option value="Dott.">Dott.</option>
-                  <option value="Dott.ssa">Dott.ssa</option>
-                </select>
-              </div>
+              <Select
+                label="Titolo medico"
+                bind:value={ambulatorioForm.medicoTitolo}
+                placeholder=""
+                options={[
+                  { value: 'Dott.', label: 'Dott.' },
+                  { value: 'Dott.ssa', label: 'Dott.ssa' },
+                ]}
+              />
               <Input
                 label="Cardiologo refertante"
                 placeholder="Nome e cognome"
@@ -1553,28 +1609,19 @@
               />
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label class="block text-sm font-medium text-textPrimary mb-1" for="ambulatorioSpecializzandoTitolo">Titolo specializzando</label>
-                <select
-                  id="ambulatorioSpecializzandoTitolo"
-                  class="w-full px-3 py-2 border rounded-lg border-gray-200 focus:ring-primary/20 focus:border-primary"
-                  bind:value={ambulatorioForm.specializzandoTitolo}
-                >
-                  <option value="Dott.">Dott.</option>
-                  <option value="Dott.ssa">Dott.ssa</option>
-                </select>
-              </div>
+              <Select
+                label="Titolo specializzando"
+                bind:value={ambulatorioForm.specializzandoTitolo}
+                placeholder=""
+                options={[
+                  { value: 'Dott.', label: 'Dott.' },
+                  { value: 'Dott.ssa', label: 'Dott.ssa' },
+                ]}
+              />
               <Input
                 label="Medico specializzando"
                 placeholder="Nome e cognome"
                 bind:value={ambulatorioForm.specializzandoNome}
-              />
-            </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Input
-                label="Data visita ambulatorio"
-                type="date"
-                bind:value={ambulatorioForm.dataVisita}
               />
             </div>
             <CVRiskFactors label="Fattori di rischio CV" bind:selectedFactors={ambulatorioForm.fattori} />
@@ -1594,22 +1641,18 @@
                 bind:value={ambulatorioForm.apr}
               ></textarea>
             </div>
-            <div class="space-y-2">
-              <label class="block text-sm font-semibold text-textPrimary">Visita odierna</label>
-              <textarea
-                class="w-full min-h-[140px] px-3 py-2 border rounded-lg border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-surface text-textPrimary"
-                placeholder="Esame obiettivo, sintomi, parametri rilevati..."
-                bind:value={ambulatorioForm.visita}
-              ></textarea>
-            </div>
-            <div class="space-y-2">
-              <label class="block text-sm font-semibold text-textPrimary">Conclusioni</label>
-              <textarea
-                class="w-full min-h-[140px] px-3 py-2 border rounded-lg border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-surface text-textPrimary"
-                placeholder="Decisioni, piano terapeutico, follow-up..."
-                bind:value={ambulatorioForm.conclusioni}
-              ></textarea>
-            </div>
+            <PresetTextArea
+              label="Visita odierna"
+              placeholder="Esame obiettivo, sintomi, parametri rilevati..."
+              storageKey="ambulatorio_visita_presets"
+              bind:value={ambulatorioForm.visita}
+            />
+            <PresetTextArea
+              label="Conclusioni"
+              placeholder="Decisioni, piano terapeutico, follow-up..."
+              storageKey="ambulatorio_conclusioni_presets"
+              bind:value={ambulatorioForm.conclusioni}
+            />
             <div class="flex flex-wrap gap-3 justify-end">
               <Button variant="primary" size="sm" on:click={saveAmbulatorio} disabled={savingAmbulatorio || generatingReferto}>
                 {savingAmbulatorio ? 'Salvataggio...' : 'Salva sezione'}

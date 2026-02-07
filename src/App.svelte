@@ -4,9 +4,11 @@
   import Button from './lib/components/ui/Button.svelte';
   import Card from './lib/components/ui/Card.svelte';
   import Input from './lib/components/ui/Input.svelte';
+  import MaskedDateInput from './lib/components/ui/MaskedDateInput.svelte';
   import Select from './lib/components/ui/Select.svelte';
   import Checkbox from './lib/components/ui/Checkbox.svelte';
   import IconBadge from './lib/components/ui/IconBadge.svelte';
+  import Icon from './lib/components/ui/Icon.svelte';
   import PatientDetail from './lib/views/PatientDetail.svelte';
   import { showToast } from './lib/stores/toastStore.js';
   import {
@@ -20,7 +22,7 @@
     createPatient,
     updatePatient
   } from './lib/stores/patientStore.js';
-  import { formatDateIT, calculateAge, getTodayISO } from './lib/utils/dateUtils.js';
+  import { formatDateIT, calculateAge, getTodayISO, formatTime } from './lib/utils/dateUtils.js';
   import { loadPlaces } from './lib/utils/placeSuggestions.js';
   import { open as openDialog } from '@tauri-apps/api/dialog';
   import { writeTextFile, removeFile, createDir } from '@tauri-apps/api/fs';
@@ -60,7 +62,6 @@
   let showNewPatientModal = false;
   let savingPatient = false;
   let placeData = PLACE_DATA;
-  let showProvSuggestions = false;
   let showLuogoSuggestions = false;
   let newPatientDateDisplay = '';
   let newPatientDateError = '';
@@ -91,6 +92,8 @@
   const DEFAULT_REFERTI_PROC_NAMING = 'Scheda procedurale - {cognome} {nome}.docx';
   const DEFAULT_REFERTI_AMB_NAMING = 'Referto ambulatorio - {cognome} {nome}.docx';
   const DEFAULT_REFERTI_HELPER = 'Placeholders: {nome} {cognome} {dn} ecc.';
+  const ROOT_PROC_DIR = 'Schede procedurali';
+  const DB_FILENAME = 'pazienti_tavi.db';
   let settings = {
     dbPath: '',
     backupPath: '',
@@ -140,6 +143,15 @@
         .join(pathSep());
       return clean;
     }
+  };
+
+  const derivePathsFromRoot = async (root) => {
+    if (!root) return {};
+    return {
+      refertiAmbPath: root,
+      refertiProcPath: await safeJoin(root, ROOT_PROC_DIR),
+      dbPath: await safeJoin(root, DB_FILENAME),
+    };
   };
 
   const normalizeRelative = async (value, base) => {
@@ -230,17 +242,11 @@
       next.refertiAmbPath = await normalizeRelative(next.refertiAmbPath, baseDocs || fallback);
       next.refertiProcPath = await normalizeRelative(next.refertiProcPath, baseDocs || fallback);
 
-      if (!next.dbPath) {
-        defaults.dbPath = await safeJoin(baseData, 'pazienti_tavi.db');
-      }
       if (!next.backupPath) {
         defaults.backupPath = await safeJoin(baseData, 'backup');
       }
       if (!next.refertiAmbPath) {
-        defaults.refertiAmbPath = await safeJoin(baseDocs, 'Referti TAVI', 'Ambulatorio strutturale');
-      }
-      if (!next.refertiProcPath) {
-        defaults.refertiProcPath = await safeJoin(baseDocs, 'Referti TAVI', 'Schede procedurali');
+        defaults.refertiAmbPath = await safeJoin(baseDocs, 'Referti TAVI');
       }
     } catch (e) {
       console.error('Errore nel calcolo dei percorsi di default', e);
@@ -307,22 +313,22 @@
       const baseData = dataDir || home || docsDir || (isWindows() ? 'C:\\\\Users\\\\Public' : '/Users/Shared');
       const baseDocs = docsDir || home || dataDir || (isWindows() ? 'C:\\\\Users\\\\Public' : '/Users/Shared');
 
+      const normalizedRoot = await normalizeRelative(settings.refertiAmbPath, baseDocs);
+      const normalizedBackup = await normalizeRelative(settings.backupPath, baseData);
+      const derived = await derivePathsFromRoot(normalizedRoot);
+
       settings = {
         ...settings,
-        dbPath: await normalizeRelative(settings.dbPath, baseData),
-        backupPath: await normalizeRelative(settings.backupPath, baseData),
-        refertiAmbPath: await normalizeRelative(settings.refertiAmbPath, baseDocs),
-        refertiProcPath: await normalizeRelative(settings.refertiProcPath, baseDocs),
+        ...derived,
+        backupPath: normalizedBackup,
       };
     } catch (e) {
       console.warn('Normalizzazione percorsi in salvataggio impostazioni fallita', e);
     }
 
     const errors = {};
-    if (!settings.dbPath?.trim()) errors.dbPath = 'Percorso database obbligatorio';
     if (!settings.backupPath?.trim()) errors.backupPath = 'Cartella backup obbligatoria';
-    if (!settings.refertiAmbPath?.trim()) errors.refertiAmbPath = 'Cartella referti ambulatorio obbligatoria';
-    if (!settings.refertiProcPath?.trim()) errors.refertiProcPath = 'Cartella referti procedurale obbligatoria';
+    if (!settings.refertiAmbPath?.trim()) errors.refertiAmbPath = 'Cartella dati e referti obbligatoria';
     if (!settings.namingAmb?.trim()) errors.namingAmb = 'Naming obbligatorio';
     if (!settings.namingProc?.trim()) errors.namingProc = 'Naming obbligatorio';
 
@@ -333,19 +339,6 @@
     if (!errors.refertiAmbPath) {
       const msg = await checkWritableDir(settings.refertiAmbPath);
       if (msg) errors.refertiAmbPath = msg;
-    }
-    if (!errors.refertiProcPath) {
-      const msg = await checkWritableDir(settings.refertiProcPath);
-      if (msg) errors.refertiProcPath = msg;
-    }
-    if (!errors.dbPath) {
-      const dir = await safeDirname(settings.dbPath);
-      if (!dir) {
-        errors.dbPath = 'Percorso database non valido';
-      } else {
-        const msg = await checkWritableDir(dir);
-        if (msg) errors.dbPath = msg;
-      }
     }
 
     settingsErrors = errors;
@@ -548,10 +541,6 @@
     if (typeof item !== 'object' || item === null) return null;
     return item.codice_catastale || item.codice || null;
   };
-
-  $: if (!ambulatorioListDate) {
-    ambulatorioListDate = getTodayISO();
-  }
 
   $: ambulatorioPatients = ($patients || [])
     .filter((entry) => normalizeIsoDate(entry?.patient?.ambulatorio_data_visita) === ambulatorioListDate)
@@ -1065,10 +1054,10 @@
             <button
               type="button"
               on:click={backToHome}
-              class="w-9 h-9 rounded-full border border-gray-200 bg-surface text-textPrimary hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1"
+              class="w-9 h-9 rounded-full border-2 border-textPrimary bg-surface text-textPrimary hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1"
               aria-label="Torna alla home"
             >
-              ←
+              <Icon name="chevronLeft" size={24} class="text-textPrimary" />
             </button>
             <div>
               <h2 class="text-2xl font-bold text-textPrimary">Visite ambulatoriali</h2>
@@ -1082,19 +1071,18 @@
             <div class="flex flex-wrap items-end gap-4">
               <div class="flex items-center gap-2">
                 <Button variant="secondary" size="sm" on:click={() => shiftAmbulatorioDate(-1)}>
-                  ←
+                  <Icon name="chevronLeft" size={20} class="text-textPrimary" />
                 </Button>
                 <Button variant="secondary" size="sm" on:click={setAmbulatorioToday}>
                   Oggi
                 </Button>
                 <Button variant="secondary" size="sm" on:click={() => shiftAmbulatorioDate(1)}>
-                  →
+                  <Icon name="chevronRight" size={20} class="text-textPrimary" />
                 </Button>
               </div>
               <div class="w-56">
-                <Input
+                <MaskedDateInput
                   label="Data visita"
-                  type="date"
                   bind:value={ambulatorioListDate}
                 />
               </div>
@@ -1130,6 +1118,9 @@
                       Data visita
                     </th>
                     <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                      Ora
+                    </th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
                       Paziente
                     </th>
                     <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
@@ -1157,6 +1148,9 @@
                     >
                       <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
                         {formatDateIT(patient.patient?.ambulatorio_data_visita)}
+                      </td>
+                      <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
+                        {formatTime(patient.patient?.ambulatorio_orario_visita) || '-'}
                       </td>
                       <td class="px-4 py-2 whitespace-nowrap">
                         <div class="font-medium text-textPrimary">
@@ -1219,10 +1213,10 @@
             <button
               type="button"
               on:click={backToHome}
-              class="w-9 h-9 rounded-full border border-gray-200 bg-surface text-textPrimary hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1"
+              class="w-9 h-9 rounded-full border-2 border-textPrimary bg-surface text-textPrimary hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1"
               aria-label="Torna alla home"
             >
-              ←
+              <Icon name="chevronLeft" size={24} class="text-textPrimary" />
             </button>
             <div>
               <h2 class="text-2xl font-bold text-textPrimary">Impostazioni</h2>
@@ -1235,30 +1229,28 @@
           <Card padding="lg" class="border border-gray-200 space-y-4">
             <div>
               <h3 class="text-lg font-semibold text-textPrimary flex items-center gap-2">
-                <IconBadge icon="database" tone="neutral" /> Database
+                <IconBadge icon="database" tone="neutral" /> Percorso dati e referti
               </h3>
-              <p class="text-sm text-textSecondary">Percorso salvataggio e gestione backup.</p>
+              <p class="text-sm text-textSecondary">Seleziona la cartella dove salvare database e referti.</p>
             </div>
             <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-start">
               <Input
-                label="Percorso database"
-                bind:value={settings.dbPath}
-                error={settingsErrors.dbPath}
+                label="Cartella dati e referti"
+                bind:value={settings.refertiAmbPath}
+                error={settingsErrors.refertiAmbPath}
               />
               <Button
                 variant="secondary"
                 size="sm"
                 class="self-start sm:mt-6"
-                on:click={() =>
-                  browsePath('database', {
-                    directory: true,
-                    key: 'dbPath',
-                    defaultFile: 'pazienti_tavi.db',
-                  })}
+                on:click={() => browsePath('dati e referti', { directory: true, key: 'refertiAmbPath' })}
               >
                 Sfoglia
               </Button>
             </div>
+            <p class="text-xs text-textSecondary">
+              Le schede procedurali verranno salvate in "{ROOT_PROC_DIR}" dentro la cartella scelta.
+            </p>
             <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-start">
               <Input
                 label="Cartella backup"
@@ -1281,20 +1273,10 @@
               <h3 class="text-lg font-semibold text-textPrimary flex items-center gap-2">
                 <IconBadge icon="file" tone="neutral" /> Referti
               </h3>
-              <p class="text-sm text-textSecondary">Percorso salvataggio, naming e apertura automatica.</p>
+              <p class="text-sm text-textSecondary">Naming e apertura automatica.</p>
             </div>
             <div class="space-y-2">
               <p class="text-sm font-semibold text-textPrimary">Ambulatorio strutturale</p>
-              <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-start">
-                <Input
-                  label="Cartella referti ambulatorio"
-                  bind:value={settings.refertiAmbPath}
-                  error={settingsErrors.refertiAmbPath}
-                />
-                <Button variant="secondary" size="sm" class="self-start sm:mt-6" on:click={() => browsePath('referti ambulatorio', { directory: true, key: 'refertiAmbPath' })}>
-                  Sfoglia
-                </Button>
-              </div>
               <Input
                 label="Naming file ambulatorio"
                 bind:value={settings.namingAmb}
@@ -1305,16 +1287,6 @@
 
             <div class="space-y-2">
               <p class="text-sm font-semibold text-textPrimary">Scheda procedurale</p>
-              <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-start">
-                <Input
-                  label="Cartella referti procedurale"
-                  bind:value={settings.refertiProcPath}
-                  error={settingsErrors.refertiProcPath}
-                />
-                <Button variant="secondary" size="sm" class="self-start sm:mt-6" on:click={() => browsePath('referti procedurale', { directory: true, key: 'refertiProcPath' })}>
-                  Sfoglia
-                </Button>
-              </div>
               <Input
                 label="Naming file procedurale"
                 bind:value={settings.namingProc}
@@ -1406,6 +1378,7 @@
           required
           bind:value={newPatientDateDisplay}
           on:input={(e) => handleNewDateInput(e.detail?.target?.value || '')}
+          className="date-field"
           error={formErrors.data_nascita || newPatientDateError}
         />
         <div class="relative">
@@ -1491,26 +1464,7 @@
             label="Provenienza (cardiologo/ospedale)"
             placeholder="Cardiologo o ospedale di provenienza"
             bind:value={newPatientForm.provenienza}
-            on:focus={() => (showProvSuggestions = true)}
-            on:input={() => (showProvSuggestions = true)}
-            on:blur={() => setTimeout(() => (showProvSuggestions = false), 120)}
           />
-          {#if showProvSuggestions && filterPlaces(newPatientForm.provenienza).length}
-            <div class="absolute z-30 mt-1 w-full bg-surface border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-              {#each filterPlaces(newPatientForm.provenienza) as suggestion}
-                <button
-                  type="button"
-                  class="w-full text-left px-3 py-2 text-sm hover:bg-surface-stronger"
-                  on:click={() => {
-                    newPatientForm.provenienza = suggestion.label;
-                    showProvSuggestions = false;
-                  }}
-                >
-                  {suggestion.label}
-                </button>
-              {/each}
-            </div>
-          {/if}
         </div>
       </div>
 
@@ -1541,24 +1495,22 @@
       <div class="space-y-4">
         <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-start">
           <Input
-            label="Percorso database"
-            bind:value={settings.dbPath}
-            error={settingsErrors.dbPath}
+            label="Cartella dati e referti"
+            bind:value={settings.refertiAmbPath}
+            error={settingsErrors.refertiAmbPath}
           />
           <Button
             variant="secondary"
             size="sm"
             class="self-start sm:mt-6"
-            on:click={() =>
-              browsePath('database', {
-                directory: true,
-                key: 'dbPath',
-                defaultFile: 'pazienti_tavi.db',
-              })}
+            on:click={() => browsePath('dati e referti', { directory: true, key: 'refertiAmbPath' })}
           >
             Sfoglia
           </Button>
         </div>
+        <p class="text-xs text-textSecondary">
+          Le schede procedurali verranno salvate in "{ROOT_PROC_DIR}" dentro la cartella scelta.
+        </p>
         <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-start">
           <Input
             label="Cartella backup"
@@ -1570,36 +1522,6 @@
             size="sm"
             class="self-start sm:mt-6"
             on:click={() => browsePath('backup', { directory: true, key: 'backupPath' })}
-          >
-            Sfoglia
-          </Button>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-start">
-          <Input
-            label="Cartella referti ambulatorio"
-            bind:value={settings.refertiAmbPath}
-            error={settingsErrors.refertiAmbPath}
-          />
-          <Button
-            variant="secondary"
-            size="sm"
-            class="self-start sm:mt-6"
-            on:click={() => browsePath('referti ambulatorio', { directory: true, key: 'refertiAmbPath' })}
-          >
-            Sfoglia
-          </Button>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-start">
-          <Input
-            label="Cartella referti procedurale"
-            bind:value={settings.refertiProcPath}
-            error={settingsErrors.refertiProcPath}
-          />
-          <Button
-            variant="secondary"
-            size="sm"
-            class="self-start sm:mt-6"
-            on:click={() => browsePath('referti procedurale', { directory: true, key: 'refertiProcPath' })}
           >
             Sfoglia
           </Button>

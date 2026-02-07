@@ -14,6 +14,12 @@
   export let min = null;
   export let max = null;
   export let step = null;
+  export let inputMode = '';
+  export let maxLength = null;
+  export let pattern = '';
+  export let autoComplete = '';
+  export let className = '';
+  export { className as class };
 
   const fallbackId = `input-${Math.random().toString(36).slice(2, 9)}`;
   $: inputId = id || fallbackId;
@@ -51,12 +57,16 @@
     {min}
     {max}
     {step}
+    {inputMode}
+    {maxLength}
+    {pattern}
+    autocomplete={autoComplete}
     value={value}
     on:input={handleInput}
     on:focus={handleFocus}
     on:blur={handleBlur}
     on:change
-    class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all
+    class="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 transition-all {className}
            {error
              ? 'border-error focus:ring-error/30'
              : 'border-gray-200 focus:ring-primary/20 focus:border-primary'}

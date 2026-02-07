@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 use tauri::{AppHandle, Config, State, Window};
@@ -72,6 +72,68 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
             std::fs::copy(entry.path(), &dest_path)?;
         }
     }
+    Ok(())
+}
+
+fn normalize_components(path: &Path) -> Vec<Component> {
+    path.components().collect()
+}
+
+fn is_subpath(child: &Path, parent: &Path) -> bool {
+    let child = normalize_components(child);
+    let parent = normalize_components(parent);
+    if parent.is_empty() {
+        return false;
+    }
+    child.starts_with(&parent)
+}
+
+fn same_path(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
+fn move_file(src: &Path, dst: &Path) -> Result<(), String> {
+    if let Some(parent) = dst.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Err(rename_err) = std::fs::rename(src, dst) {
+        std::fs::copy(src, dst).map_err(|e| e.to_string())?;
+        eprintln!("rename file failed, copied instead: {}", rename_err);
+    }
+    Ok(())
+}
+
+fn move_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
+    if !src.exists() {
+        return Ok(());
+    }
+    if !dst.exists() {
+        std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    }
+
+    for entry in std::fs::read_dir(src).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let path = entry.path();
+
+        if is_subpath(dst, &path) {
+            continue;
+        }
+
+        let dest_path = dst.join(entry.file_name());
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        if file_type.is_dir() {
+            if let Err(rename_err) = std::fs::rename(&path, &dest_path) {
+                copy_dir_all(&path, &dest_path).map_err(|e| e.to_string())?;
+                eprintln!("rename dir failed, copied instead: {}", rename_err);
+            }
+        } else {
+            move_file(&path, &dest_path)?;
+        }
+    }
+
     Ok(())
 }
 
@@ -370,6 +432,12 @@ fn resolve_referti_dir(settings: &AppSettings, kind: &str, app_handle: &AppHandl
             .referti_proc_path
             .as_ref()
             .map(PathBuf::from)
+            .or_else(|| {
+                settings
+                    .referti_amb_path
+                    .as_ref()
+                    .map(|root| PathBuf::from(root).join("Schede procedurali"))
+            })
             .unwrap_or_else(|| {
                 tauri::api::path::app_data_dir(&app_handle.config())
                     .unwrap_or_else(|| PathBuf::from("."))
@@ -408,62 +476,86 @@ pub async fn save_settings(settings: AppSettings, app_handle: AppHandle) -> Resu
     let default_db = app_data_dir.join("pazienti_tavi.db");
     let default_referti = app_data_dir.join("referti");
 
-    // Sposta DB se cambiato e vecchio esistente
-    if let Some(new_db) = settings.db_path.as_ref() {
-        let old_db_path = old
-            .db_path
-            .as_ref()
-            .map(PathBuf::from)
-            .unwrap_or(default_db.clone());
-        if new_db != old_db_path.to_string_lossy().as_ref() && old_db_path.exists() {
-            if let Some(parent) = Path::new(new_db).parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            if let Err(rename_err) = std::fs::rename(&old_db_path, new_db) {
-                // fallback copia se rename fallisce (altri volumi o file aperto)
-                std::fs::copy(&old_db_path, new_db).map_err(|e| e.to_string())?;
-                eprintln!("rename db failed, copied instead: {}", rename_err);
+    let proc_dir_name = "Schede procedurali";
+
+    let new_root = settings
+        .referti_amb_path
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or(default_referti.clone());
+    let new_db = settings
+        .db_path
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| new_root.join("pazienti_tavi.db"));
+    let new_proc = settings
+        .referti_proc_path
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| new_root.join(proc_dir_name));
+
+    let old_root = old
+        .referti_amb_path
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or(default_referti.clone());
+    let old_db = old
+        .db_path
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or(default_db.clone());
+    let old_proc = old
+        .referti_proc_path
+        .as_ref()
+        .map(PathBuf::from)
+        .unwrap_or(default_referti.clone());
+
+    let old_root_layout = old_db
+        .parent()
+        .map(|p| same_path(p, &old_root))
+        .unwrap_or(false)
+        && is_subpath(&old_proc, &old_root);
+    let root_changed = !same_path(&old_root, &new_root);
+    let root_overlap = is_subpath(&new_root, &old_root) || is_subpath(&old_root, &new_root);
+
+    if old_root_layout && root_changed && old_root.exists() && !root_overlap {
+        if let Some(parent) = new_root.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(rename_err) = std::fs::rename(&old_root, &new_root) {
+            copy_dir_all(&old_root, &new_root).map_err(|e| e.to_string())?;
+            eprintln!("rename root failed, copied instead: {}", rename_err);
+        }
+
+        if !same_path(&old_proc, &old_root) {
+            if let Ok(rel_proc) = old_proc.strip_prefix(&old_root) {
+                let moved_old_proc = new_root.join(rel_proc);
+                if moved_old_proc.exists() && !same_path(&moved_old_proc, &new_proc) {
+                    let _ = std::fs::create_dir_all(&new_proc);
+                    move_dir_contents(&moved_old_proc, &new_proc)?;
+                }
             }
         }
-    }
+        let _ = std::fs::create_dir_all(&new_proc);
+    } else {
+        let _ = std::fs::create_dir_all(&new_root);
 
-    // Sposta referti ambulatorio se cambiato
-    if let Some(new_dir) = settings.referti_amb_path.as_ref() {
-        let old_dir_path = old
-            .referti_amb_path
-            .as_ref()
-            .map(PathBuf::from)
-            .unwrap_or(default_referti.clone());
-        if new_dir != old_dir_path.to_string_lossy().as_ref() && old_dir_path.exists() {
-            if let Some(parent) = Path::new(new_dir).parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            if let Err(rename_err) = std::fs::rename(&old_dir_path, new_dir) {
-                copy_dir_all(&old_dir_path, Path::new(new_dir)).map_err(|e| e.to_string())?;
-                eprintln!("rename referti amb failed, copied instead: {}", rename_err);
-            }
-        } else {
-            let _ = std::fs::create_dir_all(new_dir);
+        if old_db.exists() && !same_path(&old_db, &new_db) {
+            move_file(&old_db, &new_db)?;
         }
-    }
 
-    // Sposta referti procedurale se cambiato
-    if let Some(new_dir) = settings.referti_proc_path.as_ref() {
-        let old_dir_path = old
-            .referti_proc_path
-            .as_ref()
-            .map(PathBuf::from)
-            .unwrap_or(default_referti.clone());
-        if new_dir != old_dir_path.to_string_lossy().as_ref() && old_dir_path.exists() {
-            if let Some(parent) = Path::new(new_dir).parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            if let Err(rename_err) = std::fs::rename(&old_dir_path, new_dir) {
-                copy_dir_all(&old_dir_path, Path::new(new_dir)).map_err(|e| e.to_string())?;
-                eprintln!("rename referti proc failed, copied instead: {}", rename_err);
-            }
+        if old_root.exists() && !same_path(&old_root, &new_root) {
+            move_dir_contents(&old_root, &new_root)?;
+        }
+
+        if old_proc.exists()
+            && !same_path(&old_proc, &new_proc)
+            && !same_path(&old_proc, &old_root)
+        {
+            let _ = std::fs::create_dir_all(&new_proc);
+            move_dir_contents(&old_proc, &new_proc)?;
         } else {
-            let _ = std::fs::create_dir_all(new_dir);
+            let _ = std::fs::create_dir_all(&new_proc);
         }
     }
 
@@ -715,12 +807,7 @@ pub async fn generate_ambulatorio_referto(
         .ok_or_else(|| "Paziente non trovato".to_string())?;
 
     let p = patient.patient;
-    let visit_date = p
-        .ambulatorio_data_visita
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .map(format_date_ita)
-        .unwrap_or_else(|| Local::now().format("%d/%m/%Y").to_string());
+    let visit_date = Local::now().format("%d/%m/%Y").to_string();
 
     let sig_sigra = match p.sesso.as_deref() {
         Some("F") | Some("f") => "Sig.ra".to_string(),

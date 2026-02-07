@@ -94,6 +94,7 @@ impl Database {
                 note TEXT,
                 ambulatorio_fattori TEXT,
                 ambulatorio_data_visita TEXT,
+                ambulatorio_orario_visita TEXT,
                 anamnesi_cardiologica TEXT,
                 apr TEXT,
                 visita_odierna TEXT,
@@ -144,6 +145,7 @@ impl Database {
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN note TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN ambulatorio_fattori TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN ambulatorio_data_visita TEXT", []);
+        let _ = conn.execute("ALTER TABLE patients ADD COLUMN ambulatorio_orario_visita TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN anamnesi_cardiologica TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN apr TEXT", []);
         let _ = conn.execute("ALTER TABLE patients ADD COLUMN visita_odierna TEXT", []);
@@ -588,11 +590,11 @@ impl Database {
                 procedurale_accesso_principale_fem, procedurale_accesso_principale_altro, procedurale_accesso_protezione, procedurale_accesso_protezione_note,
                 procedurale_altri_accessi, procedurale_diametro_pallone_femorale, procedurale_guida_safari, procedurale_protezione_osti,
                 procedurale_valvuloplastica, procedurale_valvuloplastica_note, procedurale_bioprotesi_modello, procedurale_bioprotesi_dimensione,
-                priority, ambulatorio_data_visita
+                priority, ambulatorio_data_visita, ambulatorio_orario_visita
             )
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
                      ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33,
-                     ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52, ?53, ?54)",
+                     ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, ?52, ?53, ?54, ?55)",
             params![
                 patient.nome,
                 patient.cognome,
@@ -648,6 +650,7 @@ impl Database {
                 patient.procedurale_bioprotesi_dimensione,
                 patient.priority,
                 patient.ambulatorio_data_visita,
+                patient.ambulatorio_orario_visita,
             ],
         );
 
@@ -707,8 +710,9 @@ impl Database {
                 procedurale_bioprotesi_modello = ?51, procedurale_bioprotesi_dimensione = ?52,
                 priority = ?53,
                 ambulatorio_data_visita = ?54,
+                ambulatorio_orario_visita = ?55,
                 updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?55",
+             WHERE id = ?56",
             params![
                 patient.nome,
                 patient.cognome,
@@ -764,6 +768,7 @@ impl Database {
                 patient.procedurale_bioprotesi_dimensione,
                 patient.priority,
                 patient.ambulatorio_data_visita,
+                patient.ambulatorio_orario_visita,
                 id,
             ],
         ).map_err(|e| e.to_string())?;
@@ -861,6 +866,7 @@ impl Database {
                     medico_specializzando_titolo: row.get("medico_specializzando_titolo").ok(),
                     medico_specializzando_nome: row.get("medico_specializzando_nome").ok(),
                     ambulatorio_data_visita: row.get("ambulatorio_data_visita").ok(),
+                    ambulatorio_orario_visita: row.get("ambulatorio_orario_visita").ok(),
                     procedurale_allergia_mdc: row.get("procedurale_allergia_mdc").ok(),
                     procedurale_preparazione_mdc: row.get("procedurale_preparazione_mdc").ok(),
                     procedurale_creatinina: row.get("procedurale_creatinina").ok(),
