@@ -3,13 +3,17 @@
   import IconButton from './IconButton.svelte';
   import Card from './Card.svelte';
   import Button from './Button.svelte';
+  import CloseButton from './CloseButton.svelte';
 
   export let label = '';
   export let value = '';
   export let placeholder = '';
   export let storageKey = '';
   export let disabled = false;
+  export let id = '';
 
+  const fallbackId = `preset-textarea-${Math.random().toString(36).slice(2, 9)}`;
+  $: textareaId = id || fallbackId;
   let textareaRef;
   let presets = [];
   let showPresets = false;
@@ -104,7 +108,7 @@
 
 <div class="space-y-2">
   <div class="flex items-center justify-between gap-2">
-    <label class="block text-sm font-semibold text-textPrimary">{label}</label>
+    <label class="block text-sm font-semibold text-textPrimary" for={textareaId}>{label}</label>
     <div class="flex items-center gap-2">
       <IconButton
         icon="add"
@@ -134,7 +138,7 @@
       >
         <div class="flex items-center justify-between gap-2 mb-2">
           <p class="text-sm font-semibold text-textPrimary">Frasi preimpostate</p>
-          <IconButton icon="close" label="Chiudi" variant="ghost" on:click={closeModal} />
+          <CloseButton size="sm" ariaLabel="Chiudi" on:click={closeModal} />
         </div>
 
         <div class="space-y-1 max-h-[50vh] overflow-y-auto text-left">
@@ -165,6 +169,7 @@
       : 'bg-surface'}"
     {placeholder}
     {disabled}
+    id={textareaId}
     bind:this={textareaRef}
     bind:value
     on:input={updateSelection}

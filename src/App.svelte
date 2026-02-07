@@ -9,6 +9,7 @@
   import Checkbox from './lib/components/ui/Checkbox.svelte';
   import IconBadge from './lib/components/ui/IconBadge.svelte';
   import Icon from './lib/components/ui/Icon.svelte';
+  import CloseButton from './lib/components/ui/CloseButton.svelte';
   import PatientDetail from './lib/views/PatientDetail.svelte';
   import { showToast } from './lib/stores/toastStore.js';
   import {
@@ -65,6 +66,8 @@
   let showLuogoSuggestions = false;
   let newPatientDateDisplay = '';
   let newPatientDateError = '';
+  let showPatientSearch = false;
+  let patientSearchQuery = '';
   let newPatientForm = {
     nome: '',
     cognome: '',
@@ -115,6 +118,52 @@
 
   const isWindows = () => typeof navigator !== 'undefined' && navigator.userAgent?.includes('Windows');
   const pathSep = () => (isWindows() ? '\\' : '/');
+
+  const normalizeSearchValue = (value) =>
+    String(value || '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const normalizeSearchCompact = (value) =>
+    String(value || '')
+      .toLowerCase()
+      .replace(/\s+/g, '');
+
+  const matchesPatientQuery = (patient, normalized, compact) => {
+    if (!normalized && !compact) return false;
+    const data = patient?.patient ?? patient;
+    const nome = normalizeSearchValue(data?.nome);
+    const cognome = normalizeSearchValue(data?.cognome);
+    const cf = normalizeSearchValue(data?.codice_fiscale);
+    const full = `${nome} ${cognome}`.trim();
+    const fullReverse = `${cognome} ${nome}`.trim();
+    return (
+      nome.includes(normalized) ||
+      cognome.includes(normalized) ||
+      cf.includes(normalized) ||
+      full.includes(normalized) ||
+      fullReverse.includes(normalized) ||
+      normalizeSearchCompact(full).includes(compact)
+    );
+  };
+
+  $: searchQueryNormalized = normalizeSearchValue(patientSearchQuery);
+  $: searchQueryCompact = normalizeSearchCompact(patientSearchQuery);
+  $: searchActive = showPatientSearch && searchQueryNormalized.length >= 2;
+  $: filteredPatientsByStatus = searchActive
+    ? Object.fromEntries(
+        Object.entries($patientsByStatus || {}).map(([key, list]) => [
+          key,
+          (list || []).filter((patient) =>
+            matchesPatientQuery(patient, searchQueryNormalized, searchQueryCompact)
+          ),
+        ])
+      )
+    : $patientsByStatus;
+  $: searchTotalCount = searchActive
+    ? Object.values(filteredPatientsByStatus || {}).reduce((sum, list) => sum + (list?.length || 0), 0)
+    : 0;
 
   const isIsoDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '');
   const toIsoDate = (date) => {
@@ -429,6 +478,18 @@
     } finally {
       loadingDetail = false;
     }
+  }
+
+  function togglePatientSearch() {
+    showPatientSearch = !showPatientSearch;
+    if (!showPatientSearch) {
+      patientSearchQuery = '';
+    }
+  }
+
+  function closePatientSearch() {
+    showPatientSearch = false;
+    patientSearchQuery = '';
   }
 
   async function backToHome() {
@@ -855,6 +916,14 @@
               <span class="text-xs font-semibold">Visite ambulatorio</span>
             </Button>
             <Button
+              variant={showPatientSearch ? 'primary' : 'secondary'}
+              class="flex flex-col items-center gap-1 min-w-[120px]"
+              on:click={togglePatientSearch}
+            >
+              <IconBadge icon="search" size="lg" tone={showPatientSearch ? 'primary' : 'neutral'} class="mb-1" />
+              <span class="text-xs font-semibold">Cerca paziente</span>
+            </Button>
+            <Button
               variant="secondary"
               class="flex flex-col items-center gap-1 min-w-[120px]"
               on:click={openSettings}
@@ -865,146 +934,170 @@
           </div>
         </div>
 
-        <!-- Status cards grid -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {#each statusCardGroups as summary (summary.key)}
-            {#if !summary.combo}
-              <div class="bg-surface rounded-xl shadow-sm border border-gray-200 p-6">
-                <div class="flex items-center justify-between mb-2">
-                  <h3 class="font-semibold text-textPrimary">{summary.label}</h3>
-                  <span class="text-2xl font-bold text-primary">{summary.card}</span>
-                </div>
-                {#if ACTIVE_PROGRESS_KEYS.has(summary.key)}
-                  <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      class="h-full bg-primary transition-all duration-300"
-                      style={`width: ${getProgress(summary.key, summary.card)}`}
-                    ></div>
-                  </div>
-                {/if}
+        {#if showPatientSearch}
+          <div class="w-full">
+            <div class="flex items-center gap-3 w-full">
+              <div class="flex-1">
+                <Input
+                  placeholder="Nome, cognome o codice fiscale"
+                  bind:value={patientSearchQuery}
+                />
               </div>
-            {:else}
-              <div class="bg-surface rounded-xl shadow-sm border border-gray-200 p-6 space-y-3">
-                {#each summary.entries as entry (entry.key)}
-                  <div class="flex items-center justify-between">
-                    <h3 class="font-semibold text-textPrimary">{entry.label}</h3>
-                    <span class="text-2xl font-bold text-primary">{entry.card}</span>
-                  </div>
-                {/each}
-              </div>
+              <CloseButton size="lg" ariaLabel="Chiudi ricerca" on:click={closePatientSearch} />
+            </div>
+            {#if patientSearchQuery && !searchActive}
+              <p class="text-xs text-textSecondary mt-2">Inserisci almeno 2 caratteri per avviare la ricerca.</p>
             {/if}
-          {/each}
-        </div>
+            {#if searchActive && searchTotalCount === 0}
+              <p class="text-sm text-textSecondary mt-2">Nessun paziente trovato.</p>
+            {/if}
+          </div>
+        {/if}
+
+        {#if !searchActive}
+          <!-- Status cards grid -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {#each statusCardGroups as summary (summary.key)}
+              {#if !summary.combo}
+                <div class="bg-surface rounded-xl shadow-sm border border-gray-200 p-6">
+                  <div class="flex items-center justify-between mb-2">
+                    <h3 class="font-semibold text-textPrimary">{summary.label}</h3>
+                    <span class="text-2xl font-bold text-primary">{summary.card}</span>
+                  </div>
+                  {#if ACTIVE_PROGRESS_KEYS.has(summary.key)}
+                    <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div
+                        class="h-full bg-primary transition-all duration-300"
+                        style={`width: ${getProgress(summary.key, summary.card)}`}
+                      ></div>
+                    </div>
+                  {/if}
+                </div>
+              {:else}
+                <div class="bg-surface rounded-xl shadow-sm border border-gray-200 p-6 space-y-3">
+                  {#each summary.entries as entry (entry.key)}
+                    <div class="flex items-center justify-between">
+                      <h3 class="font-semibold text-textPrimary">{entry.label}</h3>
+                      <span class="text-2xl font-bold text-primary">{entry.card}</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            {/each}
+          </div>
+        {/if}
 
         <!-- Patient tables grouped by status -->
         {#each statusSummaries as summary (summary.key)}
-          {@const statusPatients = $patientsByStatus[summary.key] || []}
+          {@const statusPatients = filteredPatientsByStatus?.[summary.key] || []}
 
-          <div class="bg-surface rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 class="text-lg font-semibold text-textPrimary">{summary.label}</h2>
-              <span class="px-3 py-1 rounded-full text-sm font-medium {getStatusColor(summary.key)}">
-                {statusPatients.length} pazient{statusPatients.length !== 1 ? 'i' : 'e'}
-              </span>
-            </div>
-
-            {#if statusPatients.length === 0}
-              <div class="px-6 py-12 text-center text-textSecondary">
-                Nessun paziente in questo stato
+          {#if !searchActive || statusPatients.length > 0}
+            <div class="bg-surface rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h2 class="text-lg font-semibold text-textPrimary">{summary.label}</h2>
+                <span class="px-3 py-1 rounded-full text-sm font-medium {getStatusColor(summary.key)}">
+                  {statusPatients.length} pazient{statusPatients.length !== 1 ? 'i' : 'e'}
+                </span>
               </div>
-            {:else}
-              <div class="overflow-auto max-h-[280px]">
-                <table class="w-full">
-                  <thead class="bg-surface-strong border-b border-gray-200">
-                    <tr>
-                      <th class="px-3 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider w-14">
-                        Note
-                      </th>
-                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                        Paziente
-                      </th>
-                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                        Priorità
-                      </th>
-                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                        Età
-                      </th>
-                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                        Data Nascita
-                      </th>
-                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                        Provenienza
-                      </th>
-                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                        Inserito il
-                      </th>
-                      <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                        Telefono
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody class="bg-surface divide-y divide-gray-200">
-                    {#each statusPatients as patient}
-                      <tr
-                        on:click={() => openPatient(patient)}
-                        class="hover:bg-surface-stronger cursor-pointer transition-colors"
-                      >
-                        <td class="px-3 py-2 whitespace-nowrap">
-                          <button
-                            type="button"
-                            class="p-1.5 rounded-full hover:bg-primary/10 transition focus:outline-none focus:ring-2 focus:ring-primary/30"
-                            on:click|stopPropagation={() => openNoteModal(patient)}
-                            aria-label="Note paziente"
-                          >
-                            <IconBadge icon="note" tone={patient.patient?.note ? 'primary' : 'neutral'} />
-                          </button>
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap">
-                          <div class="font-medium text-textPrimary">
-                            {patient.patient?.nome} {patient.patient?.cognome}
-                          </div>
-                          {#if patient.patient?.codice_fiscale}
-                            <div class="text-sm text-textSecondary">
-                              {patient.patient?.codice_fiscale}
-                            </div>
-                          {/if}
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap">
-                          {#if getPriorityInfo(patient.patient?.priority)}
-                            {@const pr = getPriorityInfo(patient.patient?.priority)}
-                            <span class={`px-2.5 py-1 rounded-full text-xs font-medium ${pr.class}`}>
-                              {pr.label}
-                            </span>
-                          {:else}
-                            <span class="text-textSecondary">-</span>
-                          {/if}
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
-                          {#if patient.patient?.data_nascita}
-                            {calculateAge(patient.patient?.data_nascita)} anni
-                          {:else}
-                            -
-                          {/if}
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
-                          {formatDateIT(patient.patient?.data_nascita)}
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
-                          {patient.patient?.provenienza || '-'}
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
-                          {formatDateIT(patient.status_created_at?.split(' ')[0])}
-                        </td>
-                        <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
-                          {patient.patient?.telefono || '-'}
-                        </td>
+
+              {#if statusPatients.length === 0}
+                <div class="px-6 py-12 text-center text-textSecondary">
+                  Nessun paziente in questo stato
+                </div>
+              {:else}
+                <div class="overflow-auto max-h-[280px]">
+                  <table class="w-full">
+                    <thead class="bg-surface-strong border-b border-gray-200">
+                      <tr>
+                        <th class="px-3 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider w-14">
+                          Note
+                        </th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                          Paziente
+                        </th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                          Priorità
+                        </th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                          Età
+                        </th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                          Data Nascita
+                        </th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                          Provenienza
+                        </th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                          Inserito il
+                        </th>
+                        <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
+                          Telefono
+                        </th>
                       </tr>
-                    {/each}
-                  </tbody>
-                </table>
-              </div>
-            {/if}
-          </div>
+                    </thead>
+                    <tbody class="bg-surface divide-y divide-gray-200">
+                      {#each statusPatients as patient}
+                        <tr
+                          on:click={() => openPatient(patient)}
+                          class="hover:bg-surface-stronger cursor-pointer transition-colors"
+                        >
+                          <td class="px-3 py-2 whitespace-nowrap">
+                            <button
+                              type="button"
+                              class="p-1.5 rounded-full hover:bg-primary/10 transition focus:outline-none focus:ring-2 focus:ring-primary/30"
+                              on:click|stopPropagation={() => openNoteModal(patient)}
+                              aria-label="Note paziente"
+                            >
+                              <IconBadge icon="note" tone={patient.patient?.note ? 'primary' : 'neutral'} />
+                            </button>
+                          </td>
+                          <td class="px-4 py-2 whitespace-nowrap">
+                            <div class="font-medium text-textPrimary">
+                              {patient.patient?.nome} {patient.patient?.cognome}
+                            </div>
+                            {#if patient.patient?.codice_fiscale}
+                              <div class="text-sm text-textSecondary">
+                                {patient.patient?.codice_fiscale}
+                              </div>
+                            {/if}
+                          </td>
+                          <td class="px-4 py-2 whitespace-nowrap">
+                            {#if getPriorityInfo(patient.patient?.priority)}
+                              {@const pr = getPriorityInfo(patient.patient?.priority)}
+                              <span class={`px-2.5 py-1 rounded-full text-xs font-medium ${pr.class}`}>
+                                {pr.label}
+                              </span>
+                            {:else}
+                              <span class="text-textSecondary">-</span>
+                            {/if}
+                          </td>
+                          <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
+                            {#if patient.patient?.data_nascita}
+                              {calculateAge(patient.patient?.data_nascita)} anni
+                            {:else}
+                              -
+                            {/if}
+                          </td>
+                          <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
+                            {formatDateIT(patient.patient?.data_nascita)}
+                          </td>
+                          <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
+                            {patient.patient?.provenienza || '-'}
+                          </td>
+                          <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
+                            {formatDateIT(patient.status_created_at?.split(' ')[0])}
+                          </td>
+                          <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
+                            {patient.patient?.telefono || '-'}
+                          </td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              {/if}
+            </div>
+          {/if}
         {/each}
       </div>
 
@@ -1188,15 +1281,16 @@
                         {patient.patient?.telefono || '-'}
                       </td>
                       <td class="px-4 py-2 whitespace-nowrap">
-                        <div on:click|stopPropagation>
-                          <Button
-                            variant="text"
-                            size="sm"
-                            on:click={() => openPatient(patient)}
-                          >
-                            Apri
-                          </Button>
-                        </div>
+                        <Button
+                          variant="text"
+                          size="sm"
+                          on:click={(event) => {
+                            event.stopPropagation();
+                            openPatient(patient);
+                          }}
+                        >
+                          Apri
+                        </Button>
                       </td>
                     </tr>
                   {/each}
@@ -1342,9 +1436,7 @@
             Inserisci i dati minimi, potrai completare le informazioni e la checklist dopo la creazione.
           </p>
         </div>
-        <Button variant="text" size="sm" on:click={closeNewPatientModal}>
-          <IconBadge icon="close" tone="neutral" />
-        </Button>
+        <CloseButton size="md" ariaLabel="Chiudi" on:click={closeNewPatientModal} />
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">

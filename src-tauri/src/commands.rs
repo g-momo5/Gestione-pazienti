@@ -75,7 +75,7 @@ fn copy_dir_all(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn normalize_components(path: &Path) -> Vec<Component> {
+fn normalize_components(path: &Path) -> Vec<Component<'_>> {
     path.components().collect()
 }
 

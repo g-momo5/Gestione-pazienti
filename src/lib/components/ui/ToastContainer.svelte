@@ -2,6 +2,7 @@
   import { fly } from 'svelte/transition';
   import { toasts, removeToast } from '../../stores/toastStore.js';
   import IconBadge from './IconBadge.svelte';
+  import CloseButton from './CloseButton.svelte';
 
   const toneMap = {
     success: { border: 'border-l-4 border-success', text: 'text-textPrimary', icon: 'check', iconTone: 'success' },
@@ -23,13 +24,12 @@
         >
           <IconBadge icon={toneMap[toast.type].icon} tone={toneMap[toast.type].iconTone} size="sm" />
           <div class="flex-1 text-sm leading-snug text-textPrimary">{toast.message}</div>
-          <button
-            class="text-xs opacity-70 hover:opacity-100"
+          <CloseButton
+            size="sm"
+            ariaLabel="Chiudi notifica"
+            className="opacity-70 hover:opacity-100"
             on:click={() => removeToast(toast.id)}
-            aria-label="Chiudi notifica"
-          >
-            ×
-          </button>
+          />
         </div>
       {:else}
         <div
@@ -40,13 +40,12 @@
         >
           <IconBadge icon="info" tone="primary" size="sm" />
           <div class="flex-1 text-sm leading-snug text-textPrimary">{toast.message}</div>
-          <button
-            class="text-xs opacity-70 hover:opacity-100"
+          <CloseButton
+            size="sm"
+            ariaLabel="Chiudi notifica"
+            className="opacity-70 hover:opacity-100"
             on:click={() => removeToast(toast.id)}
-            aria-label="Chiudi notifica"
-          >
-            ×
-          </button>
+          />
         </div>
       {/if}
     {/if}

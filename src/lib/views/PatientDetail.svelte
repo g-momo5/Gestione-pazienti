@@ -1626,16 +1626,18 @@
             </div>
             <CVRiskFactors label="Fattori di rischio CV" bind:selectedFactors={ambulatorioForm.fattori} />
             <div class="space-y-2">
-              <label class="block text-sm font-semibold text-textPrimary">Anamnesi Patologica Remota</label>
+              <label class="block text-sm font-semibold text-textPrimary" for="ambulatorioAnamnesi">Anamnesi Patologica Remota</label>
               <textarea
+                id="ambulatorioAnamnesi"
                 class="w-full min-h-[140px] px-3 py-2 border rounded-lg border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-surface text-textPrimary"
                 placeholder="Inserisci l'anamnesi patologica remota..."
                 bind:value={ambulatorioForm.anamnesi}
               ></textarea>
             </div>
             <div class="space-y-2">
-              <label class="block text-sm font-semibold text-textPrimary">Terapia domiciliare</label>
+              <label class="block text-sm font-semibold text-textPrimary" for="ambulatorioTerapia">Terapia domiciliare</label>
               <textarea
+                id="ambulatorioTerapia"
                 class="w-full min-h-[140px] px-3 py-2 border rounded-lg border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-surface text-textPrimary"
                 placeholder="Inserisci la terapia domiciliare..."
                 bind:value={ambulatorioForm.apr}
@@ -2117,7 +2119,7 @@
     margin: 0 0 12px;
   }
 
-  .print-pdf canvas {
+  :global(.print-pdf canvas) {
     display: block;
     width: 100%;
     height: auto;

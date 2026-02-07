@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use chrono::{NaiveDate, NaiveTime, Datelike};
+use chrono::NaiveTime;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Procedure {
@@ -37,33 +37,6 @@ pub struct Procedure {
 }
 
 impl Procedure {
-    /// Calcola l'età del paziente in anni completi
-    pub fn calculate_age(&self) -> Option<i32> {
-        let birth = NaiveDate::parse_from_str(&self.data_nascita, "%Y-%m-%d").ok()?;
-        let today = chrono::Local::now().date_naive();
-
-        let mut age = today.year() - birth.year();
-        if today.month() < birth.month() ||
-           (today.month() == birth.month() && today.day() < birth.day()) {
-            age -= 1;
-        }
-
-        Some(age)
-    }
-
-    /// Calcola il BMI (Body Mass Index)
-    pub fn calculate_bmi(&self) -> Option<f64> {
-        let peso = self.peso?;
-        let altezza = self.altezza?;
-
-        if altezza <= 0.0 {
-            return None;
-        }
-
-        let altezza_m = altezza / 100.0;
-        Some((peso / (altezza_m * altezza_m) * 10.0).round() / 10.0)
-    }
-
     /// Calcola la durata della procedura in minuti
     pub fn calculate_duration_minutes(&self) -> Option<i32> {
         let inizio = NaiveTime::parse_from_str(&self.ora_inizio, "%H:%M").ok()?;
@@ -73,10 +46,6 @@ impl Procedure {
         Some(duration.num_minutes() as i32)
     }
 
-    /// Restituisce nome completo
-    pub fn full_name(&self) -> String {
-        format!("{} {}", self.nome, self.cognome)
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,22 +148,6 @@ pub struct Patient {
 }
 
 impl Patient {
-    pub fn full_name(&self) -> String {
-        format!("{} {}", self.nome, self.cognome)
-    }
-
-    pub fn calculate_age(&self) -> Option<i32> {
-        let birth = NaiveDate::parse_from_str(&self.data_nascita, "%Y-%m-%d").ok()?;
-        let today = chrono::Local::now().date_naive();
-
-        let mut age = today.year() - birth.year();
-        if today.month() < birth.month() ||
-           (today.month() == birth.month() && today.day() < birth.day()) {
-            age -= 1;
-        }
-
-        Some(age)
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -214,16 +167,6 @@ impl PatientStatus {
             PatientStatus::InAttesaIntervento => "patients_in_attesa_intervento",
             PatientStatus::NonCandidabile => "patients_non_candidabile",
             PatientStatus::Completato => "patients_completato",
-        }
-    }
-
-    pub fn to_label(&self) -> &'static str {
-        match self {
-            PatientStatus::DaValutare => "Da valutare",
-            PatientStatus::InAttesaEsami => "In corso di accertamenti",
-            PatientStatus::InAttesaIntervento => "In attesa di TAVI",
-            PatientStatus::NonCandidabile => "Non candidabile a TAVI",
-            PatientStatus::Completato => "TAVI eseguita",
         }
     }
 

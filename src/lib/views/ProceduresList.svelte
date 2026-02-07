@@ -5,6 +5,7 @@
   import Button from '../components/ui/Button.svelte';
   import Card from '../components/ui/Card.svelte';
   import IconBadge from '../components/ui/IconBadge.svelte';
+  import CloseButton from '../components/ui/CloseButton.svelte';
   import {
     procedures,
     filteredProcedures,
@@ -299,12 +300,7 @@
             {calculateAge(selectedProcedure.data_nascita)} anni
           </p>
         </div>
-        <button
-          on:click={() => (showDetailModal = false)}
-          class="text-textSecondary hover:bg-gray-100 rounded-full w-10 h-10 flex items-center justify-center"
-        >
-          <IconBadge icon="close" size="sm" tone="secondary" />
-        </button>
+        <CloseButton size="md" ariaLabel="Chiudi" on:click={() => (showDetailModal = false)} />
       </div>
 
       <div class="p-6 space-y-6">
