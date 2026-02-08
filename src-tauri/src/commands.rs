@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::fs::{create_dir_all, File};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 use std::time::Duration;
 use tauri::{AppHandle, Config, State, Window};
 use tauri::Manager;
@@ -1305,75 +1304,6 @@ pub async fn generate_esami_ematochimici(
 
     schedule_temp_cleanup(out_path.clone());
     Ok(out_path.to_string_lossy().to_string())
-}
-
-#[tauri::command]
-pub async fn print_file(path: String) -> Result<(), String> {
-    if path.trim().is_empty() {
-        return Err("Percorso file non valido".to_string());
-    }
-    let target = PathBuf::from(&path);
-    if !target.exists() {
-        return Err("File non trovato".to_string());
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let escaped = path.replace('\\', "\\\\").replace('"', "\\\"");
-        let status = Command::new("osascript")
-            .arg("-e")
-            .arg(format!("set theFile to POSIX file \"{}\"", escaped))
-            .arg("-e")
-            .arg("tell application \"Finder\" to open theFile")
-            .arg("-e")
-            .arg("delay 1.2")
-            .arg("-e")
-            .arg("tell application \"System Events\" to keystroke \"p\" using command down")
-            .status()
-            .map_err(|e| e.to_string())?;
-
-        if !status.success() {
-            return Err("Errore apertura stampa".to_string());
-        }
-        return Ok(());
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let script = r#"
-$ErrorActionPreference = "SilentlyContinue"
-$p = $env:PRINT_PATH
-if ([string]::IsNullOrWhiteSpace($p)) { exit 1 }
-$proc = Start-Process -FilePath $p -PassThru
-try { $proc.WaitForInputIdle(5000) } catch {}
-Start-Sleep -Milliseconds 800
-$wshell = New-Object -ComObject WScript.Shell
-if ($proc.MainWindowTitle) { $null = $wshell.AppActivate($proc.MainWindowTitle) }
-if (-not $wshell.AppActivate($proc.Id)) { Start-Sleep -Milliseconds 300 }
-Start-Sleep -Milliseconds 200
-$wshell.SendKeys('^p')
-"#;
-
-        let status = Command::new("powershell")
-            .arg("-NoProfile")
-            .arg("-ExecutionPolicy")
-            .arg("Bypass")
-            .arg("-Command")
-            .arg(script)
-            .env("PRINT_PATH", &path)
-            .status()
-            .map_err(|e| e.to_string())?;
-
-        if !status.success() {
-            return Err("Errore apertura stampa".to_string());
-        }
-        return Ok(());
-    }
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        Err("Stampa con dialogo supportata solo su macOS e Windows".to_string())
-    }
 }
 
 #[tauri::command]

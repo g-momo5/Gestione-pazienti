@@ -39,7 +39,6 @@ fn main() {
             commands::generate_consenso_informato,
             commands::generate_consenso_informato_html,
             commands::generate_esami_ematochimici,
-            commands::print_file,
             commands::print_window,
             commands::load_settings,
             commands::save_settings,

@@ -871,7 +871,8 @@
       const docxPath = typeof docxResult === 'string' ? docxResult : '';
 
       if (docxPath) {
-        await printRefertoInSystem(docxPath, 'consenso informato');
+        showToast('Consenso informato generato', 'success');
+        await openRefertoFile(docxPath);
       } else {
         showToast('Consenso informato generato', 'success');
       }
@@ -893,7 +894,8 @@
       });
       const path = typeof result === 'string' ? result : '';
       if (path) {
-        await printRefertoInSystem(path, 'lista esami');
+        showToast('Lista esami generata', 'success');
+        await openRefertoFile(path);
       } else {
         showToast('Lista esami generata', 'success');
       }
@@ -1067,18 +1069,6 @@
         const msg = e2?.message || e?.message || 'Errore apertura referto';
         showToast(msg, 'error');
       }
-    }
-  }
-
-  async function printRefertoInSystem(path, label) {
-    if (!path) return;
-    try {
-      await invoke('print_file', { path });
-      showToast(`Apro la stampa ${label ? `di ${label}` : 'nel programma di sistema'}`, 'success');
-    } catch (e) {
-      console.error('Errore apertura stampa', e);
-      showToast('Apertura stampa non riuscita, apro il documento', 'error');
-      await openRefertoFile(path);
     }
   }
 
