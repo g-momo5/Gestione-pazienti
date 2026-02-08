@@ -1334,9 +1334,39 @@ pub async fn print_file(path: String) -> Result<(), String> {
         return Ok(());
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     {
-        Err("Stampa con dialogo supportata solo su macOS".to_string())
+        let script = r#"
+param([string]$p)
+$proc = Start-Process -FilePath $p -PassThru
+Start-Sleep -Milliseconds 800
+$wshell = New-Object -ComObject WScript.Shell
+for ($i = 0; $i -lt 12; $i++) {
+  if ($wshell.AppActivate($proc.Id)) { break }
+  Start-Sleep -Milliseconds 300
+}
+Start-Sleep -Milliseconds 200
+$wshell.SendKeys('^p')
+"#;
+
+        let status = Command::new("powershell")
+            .arg("-NoProfile")
+            .arg("-Command")
+            .arg(script)
+            .arg("-Args")
+            .arg(&path)
+            .status()
+            .map_err(|e| e.to_string())?;
+
+        if !status.success() {
+            return Err("Errore apertura stampa".to_string());
+        }
+        return Ok(());
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        Err("Stampa con dialogo supportata solo su macOS e Windows".to_string())
     }
 }
 

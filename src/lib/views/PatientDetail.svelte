@@ -955,18 +955,7 @@
       const docxPath = typeof docxResult === 'string' ? docxResult : '';
 
       if (docxPath) {
-        showToast('Invio il consenso informato alla stampante...', 'info');
-        try {
-          await invoke('print_file', { path: docxPath });
-          showToast('Stampa del consenso avviata', 'success');
-        } catch (printErr) {
-          console.error('Errore stampa diretta consenso', printErr);
-          showToast('Stampa diretta non riuscita, apro anteprima...', 'warning');
-          await openPrintPreview({
-            title: 'Consenso informato',
-            docxPath
-          });
-        }
+        await printRefertoInSystem(docxPath, 'consenso informato');
       } else {
         showToast('Consenso informato generato', 'success');
       }
@@ -988,18 +977,7 @@
       });
       const path = typeof result === 'string' ? result : '';
       if (path) {
-        showToast('Invio la lista esami alla stampante...', 'info');
-        try {
-          await invoke('print_file', { path });
-          showToast('Stampa della lista esami avviata', 'success');
-        } catch (printErr) {
-          console.error('Errore stampa diretta lista esami', printErr);
-          showToast('Stampa diretta non riuscita, apro anteprima...', 'warning');
-          await openPrintPreview({
-            title: 'Lista esami',
-            pdfPath: path
-          });
-        }
+        await printRefertoInSystem(path, 'lista esami');
       } else {
         showToast('Lista esami generata', 'success');
       }
@@ -1091,6 +1069,9 @@
         inWrapper: true,
         className: 'docx',
         useBase64URL: true,
+        hideWrapperOnPrint: true,
+        breakPages: true,
+        ignoreLastRenderedPageBreak: false,
       });
     } catch (e) {
       console.error('Errore anteprima consenso', e);
@@ -1170,6 +1151,18 @@
         const msg = e2?.message || e?.message || 'Errore apertura referto';
         showToast(msg, 'error');
       }
+    }
+  }
+
+  async function printRefertoInSystem(path, label) {
+    if (!path) return;
+    try {
+      await invoke('print_file', { path });
+      showToast(`Apro la stampa ${label ? `di ${label}` : 'nel programma di sistema'}`, 'success');
+    } catch (e) {
+      console.error('Errore apertura stampa', e);
+      showToast('Apertura stampa non riuscita, apro il documento', 'error');
+      await openRefertoFile(path);
     }
   }
 
@@ -2166,11 +2159,40 @@
     }
 
     :global(.print-surface) {
-      position: fixed;
-      inset: 0;
+      position: static;
       margin: 0;
       max-width: none;
       box-shadow: none;
+    }
+
+    :global(.print-docx) {
+      padding: 0 !important;
+    }
+
+    :global(.print-docx .docx-wrapper) {
+      background: transparent !important;
+      padding: 0 !important;
+      display: block !important;
+      align-items: stretch !important;
+    }
+
+    :global(.print-docx section.docx) {
+      page-break-after: always;
+      break-after: page;
+      page-break-inside: avoid;
+      break-inside: avoid;
+      box-shadow: none !important;
+      margin: 0 auto !important;
+    }
+
+    :global(.print-pdf) {
+      padding: 0 !important;
+    }
+
+    :global(.print-pdf canvas) {
+      page-break-after: always;
+      break-after: page;
+      break-inside: avoid;
     }
 
     :global(.no-print) {
