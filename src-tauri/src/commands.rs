@@ -710,6 +710,10 @@ fn replace_placeholders(content: &str, map: &HashMap<&str, String>) -> String {
         .replace_all(&out, |caps: &regex::Captures| {
             let inner = &caps[1];
             let cleaned = tag_re.replace_all(inner, "");
+            let cleaned: String = cleaned
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect();
             format!("{{{}}}", cleaned)
         })
         .to_string();
@@ -1337,24 +1341,26 @@ pub async fn print_file(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let script = r#"
-param([string]$p)
+$ErrorActionPreference = "SilentlyContinue"
+$p = $env:PRINT_PATH
+if ([string]::IsNullOrWhiteSpace($p)) { exit 1 }
 $proc = Start-Process -FilePath $p -PassThru
+try { $proc.WaitForInputIdle(5000) } catch {}
 Start-Sleep -Milliseconds 800
 $wshell = New-Object -ComObject WScript.Shell
-for ($i = 0; $i -lt 12; $i++) {
-  if ($wshell.AppActivate($proc.Id)) { break }
-  Start-Sleep -Milliseconds 300
-}
+if ($proc.MainWindowTitle) { $null = $wshell.AppActivate($proc.MainWindowTitle) }
+if (-not $wshell.AppActivate($proc.Id)) { Start-Sleep -Milliseconds 300 }
 Start-Sleep -Milliseconds 200
 $wshell.SendKeys('^p')
 "#;
 
         let status = Command::new("powershell")
             .arg("-NoProfile")
+            .arg("-ExecutionPolicy")
+            .arg("Bypass")
             .arg("-Command")
             .arg(script)
-            .arg("-Args")
-            .arg(&path)
+            .env("PRINT_PATH", &path)
             .status()
             .map_err(|e| e.to_string())?;
 

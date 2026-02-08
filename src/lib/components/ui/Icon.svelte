@@ -2,6 +2,7 @@
   import {
     IconChevronLeft,
     IconChevronRight,
+    IconArrowLeft,
     IconActivity,
     IconAlertTriangle,
     IconBalloon,
@@ -77,6 +78,7 @@
     database: IconDatabase,
     file: IconFileText,
     note: IconNote,
+    arrowLeft: IconArrowLeft,
   };
 
   $: Component = icons[name];

@@ -42,6 +42,7 @@
     'In corso di accertamenti',
     'In attesa di TAVI',
   ]);
+  const todayIso = getTodayISO();
   const PRIORITY_OPTIONS = [
     { value: 'alta', label: 'Alta (entro 1 mese)' },
     { value: 'media', label: 'Media (entro 3 mesi)' },
@@ -64,8 +65,7 @@
   let savingPatient = false;
   let placeData = PLACE_DATA;
   let showLuogoSuggestions = false;
-  let newPatientDateDisplay = '';
-  let newPatientDateError = '';
+  let newPatientDateInvalid = false;
   let showPatientSearch = false;
   let patientSearchQuery = '';
   let newPatientForm = {
@@ -649,63 +649,6 @@
       .join(' ');
   }
 
-  function formatDateInput(value) {
-    const digits = (value || '').replace(/\D/g, '').slice(0, 8);
-    const day = digits.slice(0, 2);
-    const month = digits.slice(2, 4);
-    const year = digits.slice(4, 8);
-    let display = '';
-    if (day) display += day;
-    if (month) display += (display ? '/' : '') + month;
-    if (year) display += (display ? '/' : '') + year;
-    let iso = '';
-    let error = '';
-    if (day.length === 2 && month.length === 2 && year.length === 4) {
-      const dNum = Number(day);
-      const mNum = Number(month);
-      const yNum = Number(year);
-      const today = new Date();
-      const currentYear = today.getFullYear();
-      if (dNum < 1 || dNum > 31) {
-        error = 'Giorno non valido';
-      } else if (mNum < 1 || mNum > 12) {
-        error = 'Mese non valido';
-      } else if (yNum < 1900 || yNum > currentYear) {
-        error = 'Anno non valido';
-      } else {
-        const candidate = new Date(`${year}-${month}-${day}T00:00:00`);
-        if (isNaN(candidate.getTime())) {
-          error = 'Data non valida';
-        } else if (candidate > today) {
-          error = 'La data non può essere futura';
-        } else {
-          iso = `${year}-${month}-${day}`;
-        }
-      }
-    }
-    return { display, iso, error };
-  }
-
-  function formatDisplayFromDigits(digits) {
-    const d = digits.replace(/\D/g, '').slice(0, 8);
-    let out = '';
-    for (let i = 0; i < d.length; i++) {
-      out += d[i];
-      if (i === 1 || i === 3) out += '/';
-    }
-    return out;
-  }
-
-  function handleNewDateInput(value) {
-    const cleaned = (value || '').replace(/\D/g, '').slice(0, 8);
-    const display = formatDisplayFromDigits(cleaned);
-    const { iso, error } = formatDateInput(cleaned);
-    newPatientDateDisplay = display;
-    newPatientForm.data_nascita = iso;
-    newPatientDateError = error;
-    updateNewPatientCF();
-  }
-
   function calcCodiceFiscale({ nome, cognome, data_nascita, sesso, luogo_nascita_codice }) {
     if (!nome || !cognome || !data_nascita || !sesso || !luogo_nascita_codice) return '';
     const oddMap = {
@@ -790,8 +733,7 @@
       data_tavi: '',
       note: '',
     };
-    newPatientDateDisplay = '';
-    newPatientDateError = '';
+    newPatientDateInvalid = false;
     showNewPatientModal = true;
   }
 
@@ -811,8 +753,10 @@
     const errors = {};
     if (!newPatientForm.nome.trim()) errors.nome = 'Nome obbligatorio';
     if (!newPatientForm.cognome.trim()) errors.cognome = 'Cognome obbligatorio';
-    if (!newPatientForm.data_nascita || newPatientDateError) {
-      errors.data_nascita = newPatientDateError || 'Data di nascita obbligatoria';
+    if (newPatientDateInvalid) {
+      errors.data_nascita = 'Data di nascita non valida';
+    } else if (!newPatientForm.data_nascita) {
+      errors.data_nascita = 'Data di nascita obbligatoria';
     }
     return errors;
   }
@@ -1147,10 +1091,10 @@
             <button
               type="button"
               on:click={backToHome}
-              class="w-9 h-9 rounded-full border-2 border-textPrimary bg-surface text-textPrimary hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1"
+              class="w-9 h-9 rounded-full border-2 bg-surface hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1 back-circle"
               aria-label="Torna alla home"
             >
-              <Icon name="chevronLeft" size={24} class="text-textPrimary" />
+              <Icon name="arrowLeft" size={22} class="text-textSecondary" />
             </button>
             <div>
               <h2 class="text-2xl font-bold text-textPrimary">Visite ambulatoriali</h2>
@@ -1307,10 +1251,10 @@
             <button
               type="button"
               on:click={backToHome}
-              class="w-9 h-9 rounded-full border-2 border-textPrimary bg-surface text-textPrimary hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1"
+              class="w-9 h-9 rounded-full border-2 bg-surface hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1 back-circle"
               aria-label="Torna alla home"
             >
-              <Icon name="chevronLeft" size={24} class="text-textPrimary" />
+              <Icon name="arrowLeft" size={22} class="text-textSecondary" />
             </button>
             <div>
               <h2 class="text-2xl font-bold text-textPrimary">Impostazioni</h2>
@@ -1464,14 +1408,14 @@
           on:input={updateNewPatientCF}
           error={formErrors.cognome}
         />
-        <Input
+        <MaskedDateInput
           label="Data di nascita"
-          placeholder="gg/mm/aaaa"
           required
-          bind:value={newPatientDateDisplay}
-          on:input={(e) => handleNewDateInput(e.detail?.target?.value || '')}
-          className="date-field"
-          error={formErrors.data_nascita || newPatientDateError}
+          bind:value={newPatientForm.data_nascita}
+          bind:invalid={newPatientDateInvalid}
+          maxDate={todayIso}
+          on:input={updateNewPatientCF}
+          error={formErrors.data_nascita}
         />
         <div class="relative">
           <Input

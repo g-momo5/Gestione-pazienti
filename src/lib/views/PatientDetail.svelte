@@ -218,8 +218,7 @@
   const PLACE_DATA = loadPlaces();
   let placeData = PLACE_DATA;
   let showLuogoSuggestions = false;
-  let anagraficaDateDisplay = '';
-  let anagraficaDateError = '';
+  let anagraficaDateInvalid = false;
   let ambulatorioDateInvalid = false;
   let ambulatorioTimeInvalid = false;
 
@@ -520,89 +519,6 @@
       .join(' ');
   }
 
-  function formatDateInput(value) {
-    const digits = (value || '').replace(/\D/g, '').slice(0, 8);
-    const day = digits.slice(0, 2);
-    const month = digits.slice(2, 4);
-    const year = digits.slice(4, 8);
-    let display = '';
-    if (day) display += day;
-    if (month) display += (display ? '/' : '') + month;
-    if (year) display += (display ? '/' : '') + year;
-    let iso = '';
-    let error = '';
-    if (day.length === 2 && month.length === 2 && year.length === 4) {
-      const dNum = Number(day);
-      const mNum = Number(month);
-      const yNum = Number(year);
-      const today = new Date();
-      const currentYear = today.getFullYear();
-      if (dNum < 1 || dNum > 31) {
-        error = 'Giorno non valido';
-      } else if (mNum < 1 || mNum > 12) {
-        error = 'Mese non valido';
-      } else if (yNum < 1900 || yNum > currentYear) {
-        error = 'Anno non valido';
-      } else {
-        const candidate = new Date(`${year}-${month}-${day}T00:00:00`);
-        if (isNaN(candidate.getTime())) {
-          error = 'Data non valida';
-        } else if (candidate > today) {
-          error = 'La data non può essere futura';
-        } else {
-          iso = `${year}-${month}-${day}`;
-        }
-      }
-    }
-    return { display, iso, error };
-  }
-
-  function formatDisplayFromDigits(digits) {
-    const d = digits.replace(/\D/g, '').slice(0, 8);
-    let out = '';
-    for (let i = 0; i < d.length; i++) {
-      out += d[i];
-      if (i === 1 || i === 3) out += '/';
-    }
-    return out;
-  }
-
-  function formatDisplayFromIso(value) {
-    if (!value) return '';
-    const clean = String(value).split('T')[0];
-    const parts = clean.split('-');
-    if (parts.length === 3 && parts[0].length === 4) {
-      const [year, month, day] = parts;
-      return `${day.padStart(2, '0')}/${month.padStart(2, '0')}/${year}`;
-    }
-    const digits = clean.replace(/\D/g, '');
-    if (digits.length === 8 && Number(digits.slice(0, 4)) > 31) {
-      return `${digits.slice(6, 8)}/${digits.slice(4, 6)}/${digits.slice(0, 4)}`;
-    }
-    return formatDisplayFromDigits(digits);
-  }
-
-  function digitsToIsoAndError(digits) {
-    const day = `${digits[0] || ''}${digits[1] || ''}`;
-    const month = `${digits[2] || ''}${digits[3] || ''}`;
-    const year = `${digits[4] || ''}${digits[5] || ''}${digits[6] || ''}${digits[7] || ''}`;
-    if (day.length < 2 || month.length < 2 || year.length < 4) {
-      return { iso: '', error: '' };
-    }
-    const numeric = formatDateInput(`${day}${month}${year}`);
-    return { iso: numeric.iso, error: numeric.error };
-  }
-
-  function handleDetailDateInput(value) {
-    const cleaned = (value || '').replace(/\D/g, '').slice(0, 8);
-    const display = formatDisplayFromDigits(cleaned);
-    const { iso, error } = formatDateInput(cleaned);
-    anagraficaDateDisplay = display;
-    anagraficaForm.data_nascita = iso;
-    anagraficaDateError = error;
-    updatePatientCF();
-  }
-
 
   function calcCodiceFiscale({ nome, cognome, data_nascita, sesso, luogo_nascita_codice }) {
     if (!nome || !cognome || !data_nascita || !sesso || !luogo_nascita_codice) return '';
@@ -678,7 +594,7 @@
     if (!patient?.patient?.id) return;
     savingAnagrafica = true;
 
-    if (!anagraficaForm.data_nascita || anagraficaDateError) {
+    if (!anagraficaForm.data_nascita || anagraficaDateInvalid) {
       showToast('Data di nascita non valida', 'warning');
       savingAnagrafica = false;
       return;
@@ -1209,8 +1125,7 @@
       specializzandoNome: patient.patient.medico_specializzando_nome || '',
     };
     taviDate = patient.patient.data_tavi || '';
-    anagraficaDateDisplay = formatDisplayFromIso(patient.patient.data_nascita || '');
-    anagraficaDateError = '';
+    anagraficaDateInvalid = false;
     lastLoadedChecklistId = patient.patient.id;
   }
 </script>
@@ -1242,10 +1157,10 @@
         <button
           type="button"
           on:click={onBack}
-          class="w-9 h-9 rounded-full border-2 border-textPrimary bg-surface text-textPrimary hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1"
+          class="w-9 h-9 rounded-full border-2 bg-surface hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1 back-circle"
           aria-label="Torna alla home"
         >
-          <Icon name="chevronLeft" size={24} class="text-textPrimary" />
+          <Icon name="arrowLeft" size={22} class="text-textSecondary" />
         </button>
         <IconBadge icon="user" size="lg" tone="primary" class="mt-1" />
         <div>
@@ -1341,7 +1256,6 @@
               <MaskedDateInput
                 label=""
                 bind:value={taviDate}
-                maxDate={todayIso}
               />
               <Button
                 variant="secondary"
@@ -1448,19 +1362,14 @@
                   updatePatientCF();
                 }}
               />
-              <div>
-                <label class="block text-sm font-medium text-textPrimary mb-1" for="anagraficaDataNascita">
-                  Data di nascita <span class="text-error">*</span>
-                </label>
-                <Input
-                  id="anagraficaDataNascita"
-                  placeholder="gg/mm/aaaa"
-                  bind:value={anagraficaDateDisplay}
-                  on:input={(e) => handleDetailDateInput(e.detail?.target?.value || '')}
-                  className="date-field"
-                  error={anagraficaDateError}
-                />
-              </div>
+              <MaskedDateInput
+                label="Data di nascita"
+                required
+                bind:value={anagraficaForm.data_nascita}
+                bind:invalid={anagraficaDateInvalid}
+                maxDate={todayIso}
+                on:input={updatePatientCF}
+              />
               <div class="relative">
                 <Input
                   label="Luogo di nascita"

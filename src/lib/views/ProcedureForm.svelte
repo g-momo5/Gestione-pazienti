@@ -61,6 +61,7 @@
   let saving = false;
   let successMessage = '';
   let duration = null;
+  const todayIso = getTodayISO();
 
   // Dropdown options
   $: valveModelOptions = formData.tipo_valvola === VALVE_TYPES.BALLOON
@@ -252,6 +253,7 @@
           label="Data di Nascita"
           bind:value={formData.data_nascita}
           bind:invalid={dataNascitaInvalid}
+          maxDate={todayIso}
           required
           error={errors.data_nascita}
         />
