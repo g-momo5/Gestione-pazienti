@@ -11,12 +11,19 @@
   import CVRiskFactors from '../components/ui/CVRiskFactors.svelte';
   import IconBadge from '../components/ui/IconBadge.svelte';
   import Icon from '../components/ui/Icon.svelte';
+  import BackCircleButton from '../components/ui/BackCircleButton.svelte';
   import SectionPanel from '../components/ui/SectionPanel.svelte';
   import { formatDateIT, calculateAge } from '../utils/dateUtils.js';
+  import { requireCondition, requireValue, requireValid } from '../utils/validationHelpers.js';
+  import { notifyError, notifySuccess } from '../utils/notify.js';
+  import {
+    STATUS_OPTIONS,
+    PRIORITY_OPTIONS,
+    ELIGIBLE_TAVI_STATUSES,
+  } from '../constants/status.js';
   import { tick } from 'svelte';
   import { calculateBMI, calculateBSA, categorizeBMI, formatNumberIT, calculateEgfrCkdEpi } from '../utils/statistics.js';
   import { changePatientStatus, loadPatient, updatePatient, deletePatient } from '../stores/patientStore.js';
-  import { showToast } from '../stores/toastStore.js';
   import { loadPlaces } from '../utils/placeSuggestions.js';
   import { invoke } from '@tauri-apps/api/tauri';
   import { readBinaryFile } from '@tauri-apps/api/fs';
@@ -31,20 +38,6 @@
   export let patient = null;
   export let loading = false;
   export let onBack = () => {};
-
-  const STATUS_OPTIONS = [
-    { value: 'Da valutare', label: 'Da valutare' },
-    { value: 'In corso di accertamenti', label: 'In corso di accertamenti' },
-    { value: 'In attesa di TAVI', label: 'In attesa di TAVI' },
-    { value: 'Non candidabile a TAVI', label: 'Non candidabile a TAVI' },
-    { value: 'TAVI eseguita', label: 'TAVI eseguita' },
-  ];
-  const ELIGIBLE_TAVI_STATUSES = ['In attesa di TAVI', 'TAVI eseguita'];
-  const PRIORITY_OPTIONS = [
-    { value: 'alta', label: 'Alta (entro 1 mese)' },
-    { value: 'media', label: 'Media (entro 3 mesi)' },
-    { value: 'bassa', label: 'Bassa (oltre 3 mesi)' },
-  ];
 
   const ECG_OPTIONS = [
     { id: 'ecgRitmoSinusale', label: 'Ritmo sinusale' },
@@ -443,10 +436,10 @@
     try {
       await changePatientStatus(patient.patient.id, statusSelection);
       await loadPatient(patient.patient.id);
-      showToast('Stato paziente aggiornato', 'success');
+      notifySuccess('Stato paziente aggiornato');
     } catch (e) {
       console.error(e);
-      showToast('Errore durante l\'aggiornamento dello stato', 'error');
+      notifyError(e, 'Errore durante l\'aggiornamento dello stato');
     } finally {
       savingStatus = false;
     }
@@ -456,14 +449,8 @@
 
   async function saveTaviDate() {
     if (!patient?.patient?.id) return;
-    if (!eligibleForTavi) {
-      showToast('La data TAVI è disponibile solo per pazienti eleggibili', 'warning');
-      return;
-    }
-    if (taviDate && !isValidISODate(taviDate)) {
-      showToast('Inserisci una data TAVI valida (YYYY-MM-DD)', 'warning');
-      return;
-    }
+    if (!requireCondition(eligibleForTavi, 'La data TAVI è disponibile solo per pazienti eleggibili')) return;
+    if (!requireCondition(!taviDate || isValidISODate(taviDate), 'Inserisci una data TAVI valida (YYYY-MM-DD)')) return;
 
     savingTaviDate = true;
     const payload = {
@@ -474,10 +461,10 @@
     try {
       await updatePatient(payload);
       await loadPatient(patient.patient.id);
-      showToast('Data TAVI aggiornata', 'success');
+      notifySuccess('Data TAVI aggiornata');
     } catch (e) {
       console.error(e);
-      showToast('Errore durante il salvataggio della data TAVI', 'error');
+      notifyError(e, 'Errore durante il salvataggio della data TAVI');
     } finally {
       savingTaviDate = false;
     }
@@ -594,8 +581,7 @@
     if (!patient?.patient?.id) return;
     savingAnagrafica = true;
 
-    if (!anagraficaForm.data_nascita || anagraficaDateInvalid) {
-      showToast('Data di nascita non valida', 'warning');
+    if (!requireCondition(anagraficaForm.data_nascita && !anagraficaDateInvalid, 'Data di nascita non valida')) {
       savingAnagrafica = false;
       return;
     }
@@ -619,10 +605,10 @@
     try {
       await updatePatient(payload);
       await loadPatient(patient.patient.id);
-      showToast('Anagrafica aggiornata', 'success');
+      notifySuccess('Anagrafica aggiornata');
     } catch (e) {
       console.error(e);
-      showToast('Errore durante il salvataggio', 'error');
+      notifyError(e, 'Errore durante il salvataggio');
     } finally {
       savingAnagrafica = false;
     }
@@ -638,11 +624,11 @@
     deletingPatient = true;
     try {
       await deletePatient(patient.patient.id);
-      showToast('Paziente eliminato', 'success');
+      notifySuccess('Paziente eliminato');
       onBack();
     } catch (e) {
       console.error(e);
-      showToast('Errore durante l\'eliminazione', 'error');
+      notifyError(e, 'Errore durante l\'eliminazione');
     } finally {
       deletingPatient = false;
       showDeleteConfirm = false;
@@ -660,10 +646,10 @@
       await changePatientStatus(patient.patient.id, 'In corso di accertamenti');
       await loadPatient(patient.patient.id);
       statusSelection = 'In corso di accertamenti';
-      showToast('Stato paziente aggiornato', 'success');
+      notifySuccess('Stato paziente aggiornato');
     } catch (e) {
       console.error(e);
-      showToast('Errore durante l\'aggiornamento dello stato', 'error');
+      notifyError(e, 'Errore durante l\'aggiornamento dello stato');
     } finally {
       changingStatusAfterReferto = false;
       showAmbulatorioStatusConfirm = false;
@@ -687,10 +673,10 @@
     try {
       await updatePatient(payload);
       await loadPatient(patient.patient.id);
-      showToast('Dati antropometrici aggiornati', 'success');
+      notifySuccess('Dati antropometrici aggiornati');
     } catch (e) {
       console.error(e);
-      showToast('Errore durante il salvataggio', 'error');
+      notifyError(e, 'Errore durante il salvataggio');
     } finally {
       savingAntropometrici = false;
     }
@@ -718,11 +704,11 @@
     try {
       await updatePatient(payload);
       await loadPatient(patient.patient.id);
-      showToast('Ambulatorio strutturale salvato', 'success');
+      notifySuccess('Ambulatorio strutturale salvato');
       return true;
     } catch (e) {
       console.error(e);
-      showToast('Errore durante il salvataggio', 'error');
+      notifyError(e, 'Errore durante il salvataggio');
       return false;
     } finally {
       savingAmbulatorio = false;
@@ -731,22 +717,10 @@
 
   async function saveAmbulatorioAppointment() {
     if (!isDaValutare) return false;
-    if (!ambulatorioForm.dataVisita) {
-      showToast('Inserisci la data dell\'appuntamento', 'warning');
-      return false;
-    }
-    if (ambulatorioDateInvalid) {
-      showToast('Data appuntamento non valida', 'warning');
-      return false;
-    }
-    if (!ambulatorioForm.oraVisita) {
-      showToast('Inserisci l\'orario dell\'appuntamento', 'warning');
-      return false;
-    }
-    if (ambulatorioTimeInvalid) {
-      showToast('Orario appuntamento non valido', 'warning');
-      return false;
-    }
+    if (!requireValue(ambulatorioForm.dataVisita, 'Inserisci la data dell\'appuntamento')) return false;
+    if (!requireValid(ambulatorioDateInvalid, 'Data appuntamento non valida')) return false;
+    if (!requireValue(ambulatorioForm.oraVisita, 'Inserisci l\'orario dell\'appuntamento')) return false;
+    if (!requireValid(ambulatorioTimeInvalid, 'Orario appuntamento non valido')) return false;
     return await saveAmbulatorio();
   }
 
@@ -795,10 +769,10 @@
     try {
       await updatePatient(payload);
       await loadPatient(patient.patient.id);
-      showToast('Scheda procedurale salvata', 'success');
+      notifySuccess('Scheda procedurale salvata');
     } catch (e) {
       console.error(e);
-      showToast('Errore durante il salvataggio della scheda procedurale', 'error');
+      notifyError(e, 'Errore durante il salvataggio della scheda procedurale');
     } finally {
       savingSchedaProcedurale = false;
     }
@@ -815,15 +789,15 @@
       });
       const path = typeof result === 'string' ? result : '';
       if (path) {
-        showToast(`Referto generato: ${path}`, 'success');
+        notifySuccess(`Referto generato: ${path}`);
         await maybeOpenReferto(path);
       } else {
-        showToast('Referto generato', 'success');
+        notifySuccess('Referto generato');
       }
     } catch (e) {
       console.error('Errore referto procedurale', e);
       const msg = typeof e === 'string' ? e : e?.message || 'Errore durante la generazione del referto';
-      showToast(msg, 'error');
+      notifyError(msg);
     } finally {
       generatingSchedaReferto = false;
     }
@@ -844,10 +818,10 @@
       });
       const path = typeof result === 'string' ? result : '';
       if (path) {
-        showToast(`Referto generato: ${path}`, 'success');
+        notifySuccess(`Referto generato: ${path}`);
         await maybeOpenReferto(path);
       } else {
-        showToast('Referto generato', 'success');
+        notifySuccess('Referto generato');
       }
       if (patient.status !== 'In corso di accertamenti') {
         showAmbulatorioStatusConfirm = true;
@@ -855,7 +829,7 @@
     } catch (e) {
       console.error('Errore referto', e);
       const msg = typeof e === 'string' ? e : e?.message || 'Errore durante la generazione del referto';
-      showToast(msg, 'error');
+      notifyError(msg);
     } finally {
       generatingReferto = false;
     }
@@ -871,15 +845,15 @@
       const docxPath = typeof docxResult === 'string' ? docxResult : '';
 
       if (docxPath) {
-        showToast('Consenso informato generato', 'success');
+        notifySuccess('Consenso informato generato');
         await openRefertoFile(docxPath);
       } else {
-        showToast('Consenso informato generato', 'success');
+        notifySuccess('Consenso informato generato');
       }
     } catch (e) {
       console.error('Errore consenso informato', e);
       const msg = typeof e === 'string' ? e : e?.message || 'Errore durante la generazione del consenso informato';
-      showToast(msg, 'error');
+      notifyError(msg);
     } finally {
       generatingConsenso = false;
     }
@@ -894,15 +868,15 @@
       });
       const path = typeof result === 'string' ? result : '';
       if (path) {
-        showToast('Lista esami generata', 'success');
+        notifySuccess('Lista esami generata');
         await openRefertoFile(path);
       } else {
-        showToast('Lista esami generata', 'success');
+        notifySuccess('Lista esami generata');
       }
     } catch (e) {
       console.error('Errore esami ematochimici', e);
       const msg = typeof e === 'string' ? e : e?.message || 'Errore durante la generazione della lista esami';
-      showToast(msg, 'error');
+      notifyError(msg);
     } finally {
       generatingEsami = false;
     }
@@ -993,7 +967,7 @@
       });
     } catch (e) {
       console.error('Errore anteprima consenso', e);
-      showToast('Errore durante la preparazione del consenso informato', 'error');
+      notifyError(e, 'Errore durante la preparazione del consenso informato');
     }
   }
 
@@ -1025,7 +999,7 @@
       }
     } catch (e) {
       console.error('Errore anteprima PDF', e);
-      showToast('Errore durante la visualizzazione del PDF', 'error');
+      notifyError(e, 'Errore durante la visualizzazione del PDF');
     } finally {
       renderingPdf = false;
     }
@@ -1067,7 +1041,7 @@
       } catch (e2) {
         console.error('Errore apertura referto', e, e2);
         const msg = e2?.message || e?.message || 'Errore apertura referto';
-        showToast(msg, 'error');
+        notifyError(msg);
       }
     }
   }
@@ -1144,14 +1118,7 @@
   <div class="space-y-6">
     <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
       <div class="flex items-start gap-3">
-        <button
-          type="button"
-          on:click={onBack}
-          class="w-9 h-9 rounded-full border-2 bg-surface hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1 back-circle"
-          aria-label="Torna alla home"
-        >
-          <Icon name="arrowLeft" size={22} class="text-textSecondary" />
-        </button>
+        <BackCircleButton onClick={onBack} />
         <IconBadge icon="user" size="lg" tone="primary" class="mt-1" />
         <div>
           <p class="text-sm text-textSecondary">Paziente</p>

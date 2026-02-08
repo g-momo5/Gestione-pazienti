@@ -10,8 +10,10 @@
   import IconBadge from './lib/components/ui/IconBadge.svelte';
   import Icon from './lib/components/ui/Icon.svelte';
   import CloseButton from './lib/components/ui/CloseButton.svelte';
+  import BackCircleButton from './lib/components/ui/BackCircleButton.svelte';
   import PatientDetail from './lib/views/PatientDetail.svelte';
-  import { showToast } from './lib/stores/toastStore.js';
+  import { requireCondition } from './lib/utils/validationHelpers.js';
+  import { notifyError, notifySuccess } from './lib/utils/notify.js';
   import {
     patients,
     patientsByStatus,
@@ -29,25 +31,19 @@
   import { writeTextFile, removeFile, createDir } from '@tauri-apps/api/fs';
   import { join, dirname, appDataDir, documentDir, homeDir } from '@tauri-apps/api/path';
   import { invoke } from '@tauri-apps/api/tauri';
+  import {
+    STATUS_OPTIONS,
+    PRIORITY_OPTIONS,
+    ACTIVE_PROGRESS_KEYS,
+    STATUS_COLORS,
+    STATUS_SUMMARY_LABELS,
+  } from './lib/constants/status.js';
 
-  const STATUS_CONFIG = [
-    { key: 'Da valutare', label: 'Da valutare' },
-    { key: 'In corso di accertamenti', label: 'In corso di accertamenti' },
-    { key: 'In attesa di TAVI', label: 'In attesa di TAVI' },
-    { key: 'TAVI eseguita', label: 'TAVI eseguita' },
-    { key: 'Non candidabile a TAVI', label: 'Non candidabili a TAVI' },
-  ];
-  const ACTIVE_PROGRESS_KEYS = new Set([
-    'Da valutare',
-    'In corso di accertamenti',
-    'In attesa di TAVI',
-  ]);
+  const STATUS_CONFIG = STATUS_OPTIONS.map(({ value, label }) => ({
+    key: value,
+    label: STATUS_SUMMARY_LABELS[value] || label,
+  }));
   const todayIso = getTodayISO();
-  const PRIORITY_OPTIONS = [
-    { value: 'alta', label: 'Alta (entro 1 mese)' },
-    { value: 'media', label: 'Media (entro 3 mesi)' },
-    { value: 'bassa', label: 'Bassa (oltre 3 mesi)' },
-  ];
 
   let currentView = 'home';
   let mainScrollEl;
@@ -242,7 +238,7 @@
       }
     } catch (e) {
       console.error(e);
-      showToast('Errore durante la selezione del percorso', 'error');
+      notifyError(e, 'Errore durante la selezione del percorso');
     }
   }
 
@@ -392,18 +388,18 @@
 
     settingsErrors = errors;
     if (Object.keys(errors).length > 0) {
-      showToast('Correggi gli errori nei campi impostazioni', 'error');
+      notifyError('Correggi gli errori nei campi impostazioni');
       return false;
     }
 
     try {
       await invoke('save_settings', { settings });
       localStorage.setItem('tavi_settings', JSON.stringify(settings));
-      showToast('Impostazioni salvate', 'success');
+      notifySuccess('Impostazioni salvate');
       return true;
     } catch (e) {
       console.error(e);
-      showToast('Errore nel salvataggio impostazioni', 'error');
+      notifyError(e, 'Errore nel salvataggio impostazioni');
       return false;
     }
   }
@@ -538,11 +534,11 @@
     try {
       await updatePatient(payload);
       await refreshData();
-      showToast('Note salvate', 'success');
+      notifySuccess('Note salvate');
       closeNoteModal();
     } catch (e) {
       console.error(e);
-      showToast('Errore durante il salvataggio delle note', 'error');
+      notifyError(e, 'Errore durante il salvataggio delle note');
     } finally {
       savingNote = false;
     }
@@ -560,14 +556,7 @@
   }
 
   function getStatusColor(status) {
-    const colors = {
-      'Da valutare': 'bg-blue-100 text-blue-800',
-      'In corso di accertamenti': 'bg-yellow-100 text-yellow-800',
-      'In attesa di TAVI': 'bg-purple-100 text-purple-800',
-      'Non candidabile a TAVI': 'bg-red-100 text-red-800',
-      'TAVI eseguita': 'bg-green-100 text-green-800',
-    };
-    return colors[status] || 'bg-gray-100 text-gray-800';
+    return STATUS_COLORS[status] || 'bg-gray-100 text-gray-800';
   }
 
   function getPriorityInfo(value) {
@@ -769,10 +758,7 @@
 
   async function saveNewPatient() {
     formErrors = validateNewPatient();
-    if (Object.keys(formErrors).length > 0) {
-      showToast('Compila i campi obbligatori', 'warning');
-      return;
-    }
+    if (!requireCondition(Object.keys(formErrors).length === 0, 'Compila i campi obbligatori')) return;
 
     const payload = {
       nome: capitalizeWordsStrict(newPatientForm.nome),
@@ -794,11 +780,11 @@
       await createPatient(payload);
       // Assicurati che i dati siano aggiornati subito dopo l'inserimento
       await refreshData();
-      showToast('Paziente creato e inserito in "Da valutare"', 'success');
+      notifySuccess('Paziente creato e inserito in \"Da valutare\"');
       await closeNewPatientModal();
     } catch (err) {
       console.error(err);
-      showToast('Errore durante la creazione del paziente', 'error');
+      notifyError(err, 'Errore durante la creazione del paziente');
     } finally {
       savingPatient = false;
     }
@@ -1088,14 +1074,7 @@
       <div class="max-w-7xl mx-auto space-y-6">
         <div class="space-y-2">
           <div class="flex items-start gap-3">
-            <button
-              type="button"
-              on:click={backToHome}
-              class="w-9 h-9 rounded-full border-2 bg-surface hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1 back-circle"
-              aria-label="Torna alla home"
-            >
-              <Icon name="arrowLeft" size={22} class="text-textSecondary" />
-            </button>
+            <BackCircleButton onClick={backToHome} />
             <div>
               <h2 class="text-2xl font-bold text-textPrimary">Visite ambulatoriali</h2>
               <p class="text-textSecondary">Seleziona la data per vedere l’elenco dei pazienti.</p>
@@ -1248,14 +1227,7 @@
       <div class="max-w-7xl mx-auto space-y-8">
         <div class="space-y-2">
           <div class="flex items-start gap-3">
-            <button
-              type="button"
-              on:click={backToHome}
-              class="w-9 h-9 rounded-full border-2 bg-surface hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1 back-circle"
-              aria-label="Torna alla home"
-            >
-              <Icon name="arrowLeft" size={22} class="text-textSecondary" />
-            </button>
+            <BackCircleButton onClick={backToHome} />
             <div>
               <h2 class="text-2xl font-bold text-textPrimary">Impostazioni</h2>
               <p class="text-textSecondary">Configura salvataggio dati e referti.</p>

@@ -23,6 +23,10 @@
   .back-circle {
     @apply border-textSecondary text-textSecondary;
   }
+
+  .back-circle-button {
+    @apply w-9 h-9 rounded-full border-2 bg-surface hover:bg-surface-stronger transition-colors flex items-center justify-center shrink-0 -ml-1;
+  }
 }
 
 /* Custom global styles */
