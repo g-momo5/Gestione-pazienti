@@ -30,6 +30,7 @@
   import { open as openDialog } from '@tauri-apps/api/dialog';
   import { writeTextFile, removeFile, createDir } from '@tauri-apps/api/fs';
   import { join, dirname, appDataDir, documentDir, homeDir } from '@tauri-apps/api/path';
+  import { open as openExternal } from '@tauri-apps/api/shell';
   import { invoke } from '@tauri-apps/api/tauri';
   import {
     STATUS_OPTIONS,
@@ -503,6 +504,27 @@
     currentView = 'ambulatorio-list';
   }
 
+  async function openRefertiFolder() {
+    const folderPath = settings.refertiAmbPath?.trim();
+    if (!folderPath) {
+      notifyError('Configura prima la cartella dati e referti nelle impostazioni');
+      return;
+    }
+
+    const folderUrl = folderPath.startsWith('file://') ? folderPath : `file://${encodeURI(folderPath)}`;
+    try {
+      await openExternal(folderPath);
+    } catch (e) {
+      try {
+        await openExternal(folderUrl);
+      } catch (e2) {
+        console.error('Errore apertura cartella referti', e, e2);
+        const msg = e2?.message || e?.message || 'Impossibile aprire la cartella referti';
+        notifyError(msg);
+      }
+    }
+  }
+
   function shiftAmbulatorioDate(delta) {
     ambulatorioListDate = addDaysToIso(ambulatorioListDate, delta);
   }
@@ -844,6 +866,14 @@
             >
               <IconBadge icon="calendar" size="lg" tone="neutral" class="mb-1" />
               <span class="text-xs font-semibold">Visite ambulatorio</span>
+            </Button>
+            <Button
+              variant="secondary"
+              class="flex flex-col items-center gap-1 min-w-[120px]"
+              on:click={openRefertiFolder}
+            >
+              <IconBadge icon="file" size="lg" tone="neutral" class="mb-1" />
+              <span class="text-xs font-semibold">Cartella Referti</span>
             </Button>
             <Button
               variant={showPatientSearch ? 'primary' : 'secondary'}
