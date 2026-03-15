@@ -1,6 +1,7 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import ToastContainer from './lib/components/ui/ToastContainer.svelte';
+  import UpdateDownloadToast from './lib/components/ui/UpdateDownloadToast.svelte';
   import Button from './lib/components/ui/Button.svelte';
   import Card from './lib/components/ui/Card.svelte';
   import Input from './lib/components/ui/Input.svelte';
@@ -31,7 +32,15 @@
   import { writeTextFile, removeFile, createDir } from '@tauri-apps/api/fs';
   import { join, dirname, appDataDir, documentDir, homeDir } from '@tauri-apps/api/path';
   import { open as openExternal } from '@tauri-apps/api/shell';
+  import { listen } from '@tauri-apps/api/event';
   import { invoke } from '@tauri-apps/api/tauri';
+  import {
+    updateStatus,
+    updateDownloadProgress,
+    setUpdateStatus,
+    setUpdateDownloadProgress,
+    resetUpdateDownloadProgress,
+  } from './lib/stores/updateStore.js';
   import {
     STATUS_OPTIONS,
     PRIORITY_OPTIONS,
@@ -102,9 +111,223 @@
     namingAmb: DEFAULT_REFERTI_AMB_NAMING,
     namingProc: DEFAULT_REFERTI_PROC_NAMING,
     autoOpenReferti: true,
+    updateState: 'idle',
+    updateVersion: null,
+    updateNotes: null,
+    updatePublishedAt: null,
+    updateDownloadUrl: null,
+    updateInstallerPath: null,
+    updateDeferred: false,
+    updateLastCheck: null,
+    updateLastError: null,
   };
   let settingsErrors = {};
   let showInitialSetup = false;
+  let checkingUpdates = false;
+  let downloadingUpdate = false;
+  let installingUpdate = false;
+  let showUpdateDownloadPrompt = false;
+  let showUpdateInstallPrompt = false;
+  let unlistenUpdateProgress = null;
+  let updateStatusValue = {};
+  let updateProgressValue = {};
+  const UPDATE_AVAILABLE_STATES = new Set(['available', 'downloading', 'downloaded']);
+
+  $: updateStatusValue = $updateStatus;
+  $: updateProgressValue = $updateDownloadProgress;
+  $: showDeferredUpdateBanner = Boolean(
+    updateStatusValue?.deferred &&
+    (updateStatusValue?.state === 'available' || updateStatusValue?.state === 'downloaded')
+  );
+  $: showUpdateBanner = Boolean(
+    showDeferredUpdateBanner ||
+    updateStatusValue?.state === 'available' ||
+    updateStatusValue?.state === 'downloaded'
+  );
+
+  const persistSettingsCache = (next) => {
+    try {
+      localStorage.setItem('tavi_settings', JSON.stringify(next));
+    } catch (e) {
+      console.warn('Impossibile aggiornare cache locale impostazioni', e);
+    }
+  };
+
+  const mergeUpdateFieldsIntoSettings = (status) => {
+    if (!status || typeof status !== 'object') return;
+    settings = {
+      ...settings,
+      updateState: status.state || 'idle',
+      updateVersion: status.availableVersion ?? null,
+      updateNotes: status.notes ?? null,
+      updatePublishedAt: status.publishedAt ?? null,
+      updateDownloadUrl: status.downloadUrl ?? settings.updateDownloadUrl ?? null,
+      updateInstallerPath: status.installerPath ?? null,
+      updateDeferred: Boolean(status.deferred),
+      updateLastCheck: status.lastCheck ?? null,
+      updateLastError: status.lastError ?? null,
+    };
+    persistSettingsCache(settings);
+  };
+
+  const hydrateUpdateStateFromSettings = () => {
+    const state = settings.updateState || 'idle';
+    const deferred = Boolean(settings.updateDeferred);
+    setUpdateStatus({
+      state,
+      currentVersion: '',
+      availableVersion: settings.updateVersion ?? null,
+      notes: settings.updateNotes ?? null,
+      publishedAt: settings.updatePublishedAt ?? null,
+      downloadUrl: settings.updateDownloadUrl ?? null,
+      installerPath: settings.updateInstallerPath ?? null,
+      deferred,
+      updateAvailable: UPDATE_AVAILABLE_STATES.has(state),
+      shouldPromptDownload: state === 'available' && !deferred,
+      shouldPromptInstall: state === 'downloaded' && !deferred,
+      lastCheck: settings.updateLastCheck ?? null,
+      lastError: settings.updateLastError ?? null,
+    });
+  };
+
+  const applyUpdateStatus = (status) => {
+    if (!status || typeof status !== 'object') return;
+    setUpdateStatus(status);
+    mergeUpdateFieldsIntoSettings(status);
+  };
+
+  const formatUpdateLastCheck = (value) => {
+    if (!value) return '-';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return new Intl.DateTimeFormat('it-IT', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    }).format(date);
+  };
+
+  const formatUpdateState = (value) => {
+    const state = String(value || 'idle');
+    if (state === 'idle') return 'Nessun aggiornamento rilevato';
+    if (state === 'available') return 'Aggiornamento disponibile';
+    if (state === 'downloading') return 'Download in corso';
+    if (state === 'downloaded') return 'Pronto da installare';
+    if (state === 'error') return 'Errore controllo aggiornamenti';
+    return state;
+  };
+
+  async function setupUpdateProgressListener() {
+    try {
+      unlistenUpdateProgress = await listen('app://update-download-progress', (event) => {
+        const payload = event?.payload || {};
+        setUpdateDownloadProgress({
+          active: true,
+          version: payload.version || updateStatusValue?.availableVersion || '',
+          downloadedBytes: Number(payload.downloadedBytes || 0),
+          totalBytes: payload.totalBytes ?? null,
+          percent: Number(payload.percent || 0),
+        });
+      });
+    } catch (e) {
+      console.warn('Listener progress updater non disponibile', e);
+    }
+  }
+
+  async function checkForUpdates(opts = { silent: false, manual: false }) {
+    if (checkingUpdates) return;
+    checkingUpdates = true;
+    try {
+      const status = await invoke('check_app_update');
+      applyUpdateStatus(status);
+
+      if (!showInitialSetup) {
+        if (status?.shouldPromptInstall) {
+          showUpdateDownloadPrompt = false;
+          showUpdateInstallPrompt = true;
+        } else if (status?.shouldPromptDownload) {
+          showUpdateInstallPrompt = false;
+          showUpdateDownloadPrompt = true;
+        }
+      }
+
+      if (opts.manual) {
+        if (status?.lastError) {
+          notifyError(status.lastError, 'Errore durante il controllo aggiornamenti');
+        } else if (status?.updateAvailable) {
+          notifySuccess(`Aggiornamento ${status.availableVersion || ''} disponibile`);
+        } else {
+          notifySuccess('Nessun aggiornamento disponibile');
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      if (!opts.silent) {
+        notifyError(e, 'Errore durante il controllo aggiornamenti');
+      }
+    } finally {
+      checkingUpdates = false;
+    }
+  }
+
+  async function downloadUpdateNow() {
+    if (downloadingUpdate) return;
+    downloadingUpdate = true;
+    showUpdateDownloadPrompt = false;
+
+    setUpdateDownloadProgress({
+      active: true,
+      version: updateStatusValue?.availableVersion || settings.updateVersion || '',
+      downloadedBytes: 0,
+      totalBytes: null,
+      percent: 0,
+    });
+
+    try {
+      const status = await invoke('download_app_update');
+      applyUpdateStatus(status);
+      notifySuccess('Aggiornamento scaricato');
+      showUpdateInstallPrompt = true;
+      setTimeout(() => {
+        resetUpdateDownloadProgress();
+      }, 1200);
+    } catch (e) {
+      console.error(e);
+      resetUpdateDownloadProgress();
+      notifyError(e, 'Errore durante il download aggiornamento');
+      await checkForUpdates({ silent: true, manual: false });
+    } finally {
+      downloadingUpdate = false;
+    }
+  }
+
+  async function installUpdateNow() {
+    if (installingUpdate) return;
+    installingUpdate = true;
+    showUpdateInstallPrompt = false;
+    try {
+      const status = await invoke('install_app_update');
+      applyUpdateStatus(status);
+      notifySuccess('Installer avviato');
+    } catch (e) {
+      console.error(e);
+      notifyError(e, "Errore durante l'avvio dell'installer");
+      await checkForUpdates({ silent: true, manual: false });
+    } finally {
+      installingUpdate = false;
+    }
+  }
+
+  async function deferUpdatePrompt() {
+    showUpdateDownloadPrompt = false;
+    showUpdateInstallPrompt = false;
+    try {
+      const status = await invoke('dismiss_app_update');
+      applyUpdateStatus(status);
+    } catch (e) {
+      console.error(e);
+      notifyError(e, "Errore aggiornando lo stato dell'update");
+    }
+  }
 
   const pickDefined = (obj = {}) =>
     Object.fromEntries(
@@ -431,8 +654,32 @@
   $: buttonPadY = lerp(8, 4, headerShrink);
 
   onMount(() => {
-    loadPersistedSettings();
+    let disposed = false;
+
+    (async () => {
+      await loadPersistedSettings();
+      if (disposed) return;
+      hydrateUpdateStateFromSettings();
+      await checkForUpdates({ silent: true, manual: false });
+    })();
+
+    setupUpdateProgressListener();
     handleMainScroll();
+
+    return () => {
+      disposed = true;
+      if (typeof unlistenUpdateProgress === 'function') {
+        unlistenUpdateProgress();
+        unlistenUpdateProgress = null;
+      }
+    };
+  });
+
+  onDestroy(() => {
+    if (typeof unlistenUpdateProgress === 'function') {
+      unlistenUpdateProgress();
+      unlistenUpdateProgress = null;
+    }
   });
   $: statusSummaries = STATUS_CONFIG.map(({ key, label }) => {
     const grouped = ($patientsByStatus[key] || []).length;
@@ -894,6 +1141,55 @@
           </div>
         </div>
 
+        {#if showUpdateBanner}
+          <Card padding="md" class="border border-primary/30 bg-primary/5">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div class="min-w-0">
+                {#if updateStatusValue.state === 'downloaded'}
+                  <p class="text-sm font-semibold text-textPrimary">
+                    Aggiornamento {updateStatusValue.availableVersion || ''} scaricato
+                  </p>
+                  <p class="text-xs text-textSecondary mt-1">
+                    Pronto da installare. Salva eventuali dati non salvati prima di procedere.
+                  </p>
+                {:else}
+                  <p class="text-sm font-semibold text-textPrimary">
+                    Aggiornamento {updateStatusValue.availableVersion || ''} disponibile
+                  </p>
+                  <p class="text-xs text-textSecondary mt-1">
+                    Puoi scaricarlo ora oppure rimandare e gestirlo dalle impostazioni.
+                  </p>
+                {/if}
+              </div>
+              <div class="flex flex-wrap items-center gap-2">
+                {#if updateStatusValue.state === 'available'}
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    on:click={downloadUpdateNow}
+                    disabled={downloadingUpdate || checkingUpdates}
+                  >
+                    {downloadingUpdate ? 'Download...' : 'Scarica ora'}
+                  </Button>
+                {/if}
+                {#if updateStatusValue.state === 'downloaded'}
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    on:click={() => (showUpdateInstallPrompt = true)}
+                    disabled={installingUpdate}
+                  >
+                    Installa ora
+                  </Button>
+                {/if}
+                <Button variant="text" size="sm" on:click={deferUpdatePrompt}>
+                  Dopo
+                </Button>
+              </div>
+            </div>
+          </Card>
+        {/if}
+
         {#if showPatientSearch}
           <div class="w-full">
             <div class="flex items-center gap-3 w-full">
@@ -1344,6 +1640,77 @@
           </Card>
         </div>
 
+        <Card padding="lg" class="border border-gray-200 space-y-4">
+          <div>
+            <h3 class="text-lg font-semibold text-textPrimary flex items-center gap-2">
+              <IconBadge icon="download" tone="neutral" /> Aggiornamenti applicazione
+            </h3>
+            <p class="text-sm text-textSecondary">
+              Controllo automatico ad ogni avvio. Installazione sempre solo su azione esplicita.
+            </p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <p class="text-textSecondary">
+              Versione corrente:
+              <span class="font-semibold text-textPrimary ml-1">{updateStatusValue.currentVersion || '-'}</span>
+            </p>
+            <p class="text-textSecondary">
+              Versione disponibile:
+              <span class="font-semibold text-textPrimary ml-1">{updateStatusValue.availableVersion || '-'}</span>
+            </p>
+            <p class="text-textSecondary">
+              Stato:
+              <span class="font-semibold text-textPrimary ml-1">{formatUpdateState(updateStatusValue.state)}</span>
+            </p>
+            <p class="text-textSecondary">
+              Ultimo controllo:
+              <span class="font-semibold text-textPrimary ml-1">{formatUpdateLastCheck(updateStatusValue.lastCheck)}</span>
+            </p>
+          </div>
+
+          {#if updateStatusValue.notes}
+            <div class="text-xs text-textSecondary bg-surface-stronger rounded-lg p-3 whitespace-pre-wrap">
+              {updateStatusValue.notes}
+            </div>
+          {/if}
+
+          {#if updateStatusValue.lastError}
+            <p class="text-xs text-error">{updateStatusValue.lastError}</p>
+          {/if}
+
+          <div class="flex flex-wrap items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              on:click={() => checkForUpdates({ silent: false, manual: true })}
+              disabled={checkingUpdates || downloadingUpdate || installingUpdate}
+            >
+              {checkingUpdates ? 'Controllo...' : 'Controlla aggiornamenti ora'}
+            </Button>
+            {#if updateStatusValue.state === 'available'}
+              <Button
+                variant="primary"
+                size="sm"
+                on:click={downloadUpdateNow}
+                disabled={downloadingUpdate || installingUpdate}
+              >
+                {downloadingUpdate ? 'Download...' : 'Scarica aggiornamento'}
+              </Button>
+            {/if}
+            {#if updateStatusValue.state === 'downloaded'}
+              <Button
+                variant="primary"
+                size="sm"
+                on:click={() => (showUpdateInstallPrompt = true)}
+                disabled={installingUpdate}
+              >
+                {installingUpdate ? 'Installazione...' : 'Installa aggiornamento'}
+              </Button>
+            {/if}
+          </div>
+        </Card>
+
         <div class="flex justify-end">
           <Button variant="primary" on:click={validateAndSaveSettings}>Salva impostazioni</Button>
         </div>
@@ -1572,5 +1939,78 @@
     </Card>
   </div>
 {/if}
+
+{#if showUpdateDownloadPrompt}
+  <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+    <div class="max-w-lg w-full" role="dialog" aria-modal="true" tabindex="-1">
+      <Card padding="lg" class="bg-surface">
+        <div class="flex items-start gap-3">
+          <IconBadge icon="download" tone="primary" />
+          <div>
+            <h3 class="text-lg font-semibold text-textPrimary">Nuovo aggiornamento disponibile</h3>
+            <p class="text-sm text-textSecondary mt-1">
+              Versione <span class="font-semibold text-textPrimary">{updateStatusValue.availableVersion || '-'}</span>.
+              Vuoi scaricarla adesso?
+            </p>
+            {#if updateStatusValue.notes}
+              <div class="text-xs text-textSecondary bg-surface-stronger rounded-lg p-2 mt-3 whitespace-pre-wrap max-h-32 overflow-y-auto">
+                {updateStatusValue.notes}
+              </div>
+            {/if}
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 mt-6">
+          <Button variant="text" size="sm" on:click={deferUpdatePrompt}>Dopo</Button>
+          <Button
+            variant="primary"
+            size="sm"
+            on:click={downloadUpdateNow}
+            disabled={downloadingUpdate}
+          >
+            {downloadingUpdate ? 'Download...' : 'Scarica adesso'}
+          </Button>
+        </div>
+      </Card>
+    </div>
+  </div>
+{/if}
+
+{#if showUpdateInstallPrompt}
+  <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+    <div class="max-w-lg w-full" role="dialog" aria-modal="true" tabindex="-1">
+      <Card padding="lg" class="bg-surface">
+        <div class="flex items-start gap-3">
+          <IconBadge icon="alert" tone="warning" />
+          <div>
+            <h3 class="text-lg font-semibold text-textPrimary">Installare aggiornamento ora?</h3>
+            <p class="text-sm text-textSecondary mt-1">
+              La versione <span class="font-semibold text-textPrimary">{updateStatusValue.availableVersion || '-'}</span>
+              è pronta. Salva eventuali dati non ancora salvati prima di continuare.
+            </p>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 mt-6">
+          <Button variant="text" size="sm" on:click={deferUpdatePrompt}>Dopo</Button>
+          <Button
+            variant="primary"
+            size="sm"
+            on:click={installUpdateNow}
+            disabled={installingUpdate}
+          >
+            {installingUpdate ? 'Avvio installer...' : 'Installa ora'}
+          </Button>
+        </div>
+      </Card>
+    </div>
+  </div>
+{/if}
+
+<UpdateDownloadToast
+  active={updateProgressValue.active && downloadingUpdate}
+  version={updateProgressValue.version}
+  downloadedBytes={updateProgressValue.downloadedBytes}
+  totalBytes={updateProgressValue.totalBytes}
+  percent={updateProgressValue.percent}
+/>
 
 <ToastContainer />

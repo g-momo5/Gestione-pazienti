@@ -26,6 +26,15 @@ pub struct AppSettings {
     pub naming_amb: Option<String>,
     pub naming_proc: Option<String>,
     pub auto_open_referti: Option<bool>,
+    pub update_state: Option<String>,
+    pub update_version: Option<String>,
+    pub update_notes: Option<String>,
+    pub update_published_at: Option<String>,
+    pub update_download_url: Option<String>,
+    pub update_installer_path: Option<String>,
+    pub update_deferred: Option<bool>,
+    pub update_last_check: Option<String>,
+    pub update_last_error: Option<String>,
 }
 
 pub fn settings_file_path() -> PathBuf {

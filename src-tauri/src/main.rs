@@ -4,10 +4,11 @@
 mod commands;
 mod database;
 mod models;
+mod updater;
 
+use commands::read_settings_from_disk;
 use database::Database;
 use std::path::PathBuf;
-use commands::read_settings_from_disk;
 
 fn main() {
     // Determina il percorso del database
@@ -42,6 +43,10 @@ fn main() {
             commands::print_window,
             commands::load_settings,
             commands::save_settings,
+            updater::check_app_update,
+            updater::download_app_update,
+            updater::install_app_update,
+            updater::dismiss_app_update,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
