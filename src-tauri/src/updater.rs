@@ -12,6 +12,9 @@ use tauri::{AppHandle, Manager};
 
 const UPDATE_MANIFEST_URL: &str =
     "https://github.com/g-momo5/Gestione-pazienti/releases/latest/download/update-manifest.json";
+const UPDATE_REPO_OWNER: &str = "g-momo5";
+const UPDATE_REPO_NAME: &str = "Gestione-pazienti";
+const UPDATE_HTTP_USER_AGENT: &str = "gestionale-pazienti-tavi-updater";
 pub const APP_UPDATE_PROGRESS_EVENT: &str = "app://update-download-progress";
 
 const STATE_IDLE: &str = "idle";
@@ -54,6 +57,23 @@ struct ManifestAssetObject {
     url: String,
     #[serde(default)]
     file_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubLatestRelease {
+    tag_name: String,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(default)]
+    published_at: Option<String>,
+    #[serde(default)]
+    assets: Vec<GithubReleaseAsset>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubReleaseAsset {
+    name: String,
+    browser_download_url: String,
 }
 
 impl ManifestAsset {
@@ -240,9 +260,31 @@ async fn fetch_manifest() -> Result<UpdateManifest, String> {
         .build()
         .map_err(|e| format!("Impossibile inizializzare il client HTTP: {e}"))?;
 
+    match fetch_manifest_from_static(&client).await {
+        Ok(manifest) => Ok(manifest),
+        Err(primary_error) => match fetch_manifest_from_github_latest(&client).await {
+            Ok(manifest) => Ok(manifest),
+            Err(fallback_error) => {
+                if primary_error.contains("HTTP 404") && fallback_error.contains("HTTP 404") {
+                    return Err(
+                        "Nessuna release stabile pubblica trovata su GitHub (oppure repository non accessibile). \
+Pubblica una release con almeno un asset .exe (Windows) o .dmg (macOS)."
+                            .to_string(),
+                    );
+                }
+                Err(format!(
+                    "{primary_error}. Fallback API GitHub fallito: {fallback_error}"
+                ))
+            }
+        },
+    }
+}
+
+async fn fetch_manifest_from_static(client: &Client) -> Result<UpdateManifest, String> {
     let response = client
         .get(UPDATE_MANIFEST_URL)
         .header("Accept", "application/json")
+        .header("User-Agent", UPDATE_HTTP_USER_AGENT)
         .send()
         .await
         .map_err(|e| format!("Errore rete durante il check aggiornamenti: {e}"))?;
@@ -258,6 +300,67 @@ async fn fetch_manifest() -> Result<UpdateManifest, String> {
         .json::<UpdateManifest>()
         .await
         .map_err(|e| format!("Manifest aggiornamenti non valido: {e}"))
+}
+
+async fn fetch_manifest_from_github_latest(client: &Client) -> Result<UpdateManifest, String> {
+    let latest_release_url = format!(
+        "https://api.github.com/repos/{}/{}/releases/latest",
+        UPDATE_REPO_OWNER, UPDATE_REPO_NAME
+    );
+
+    let response = client
+        .get(latest_release_url)
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", UPDATE_HTTP_USER_AGENT)
+        .send()
+        .await
+        .map_err(|e| format!("Errore rete interrogando GitHub releases/latest: {e}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "GitHub releases/latest non disponibile (HTTP {})",
+            response.status()
+        ));
+    }
+
+    let release = response
+        .json::<GithubLatestRelease>()
+        .await
+        .map_err(|e| format!("Risposta releases/latest non valida: {e}"))?;
+
+    let version = release.tag_name.trim().trim_start_matches('v').to_string();
+    if version.is_empty() {
+        return Err("Tag release GitHub vuoto".to_string());
+    }
+
+    let mut windows = None;
+    let mut macos = None;
+    for asset in release.assets {
+        let name = asset.name.to_ascii_lowercase();
+        if windows.is_none() && name.ends_with(".exe") {
+            windows = Some(ManifestAsset::Object(ManifestAssetObject {
+                url: asset.browser_download_url.clone(),
+                file_name: Some(asset.name.clone()),
+            }));
+        }
+        if macos.is_none() && name.ends_with(".dmg") {
+            macos = Some(ManifestAsset::Object(ManifestAssetObject {
+                url: asset.browser_download_url.clone(),
+                file_name: Some(asset.name.clone()),
+            }));
+        }
+    }
+
+    if windows.is_none() && macos.is_none() {
+        return Err("Nessun asset .exe o .dmg trovato nell'ultima release GitHub".to_string());
+    }
+
+    Ok(UpdateManifest {
+        version,
+        published_at: release.published_at,
+        notes: release.body,
+        assets: UpdateManifestAssets { windows, macos },
+    })
 }
 
 fn apply_manifest_to_settings(
