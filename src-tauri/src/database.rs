@@ -19,6 +19,23 @@ impl Database {
         Ok(db)
     }
 
+    /// Ricollega la connessione al database su un nuovo percorso e applica le migrazioni.
+    pub fn reconnect(&self, db_path: PathBuf) -> Result<(), String> {
+        if let Some(parent) = db_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+
+        let new_conn = Connection::open(&db_path).map_err(|e| e.to_string())?;
+        let mut guard = self
+            .conn
+            .lock()
+            .map_err(|_| "Database lock poisoned".to_string())?;
+        *guard = new_conn;
+        drop(guard);
+
+        self.initialize_schema().map_err(|e| e.to_string())
+    }
+
     /// Crea le tabelle di stato se mancanti (migrazione difensiva).
     fn ensure_status_tables(&self, conn: &Connection) -> SqlResult<()> {
         conn.execute(

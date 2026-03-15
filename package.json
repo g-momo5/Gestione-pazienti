@@ -1,6 +1,6 @@
 {
   "name": "gestionale-pazienti-tavi",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Gestionale Pazienti TAVI - Applicazione desktop per gestire pazienti in lista TAVI",
   "type": "module",
   "scripts": {
@@ -48,6 +48,6 @@
     "desktop",
     "tavi"
   ],
-  "author": "Dr. Mohamed",
+  "author": "GMD Medical",
   "license": "Proprietary"
 }

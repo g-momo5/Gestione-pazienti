@@ -476,7 +476,11 @@ pub async fn load_settings() -> Result<AppSettings, String> {
 }
 
 #[tauri::command]
-pub async fn save_settings(settings: AppSettings, app_handle: AppHandle) -> Result<(), String> {
+pub async fn save_settings(
+    settings: AppSettings,
+    app_handle: AppHandle,
+    db: State<'_, Database>,
+) -> Result<(), String> {
     let old = read_settings_from_disk().unwrap_or_default();
     let app_config = app_handle.config().clone();
     let app_data_dir = tauri::api::path::app_data_dir(&app_config)
@@ -524,6 +528,7 @@ pub async fn save_settings(settings: AppSettings, app_handle: AppHandle) -> Resu
         .unwrap_or(false)
         && is_subpath(&old_proc, &old_root);
     let root_changed = !same_path(&old_root, &new_root);
+    let db_path_changed = !same_path(&old_db, &new_db);
     let root_overlap = is_subpath(&new_root, &old_root) || is_subpath(&old_root, &new_root);
 
     if old_root_layout && root_changed && old_root.exists() && !root_overlap {
@@ -567,7 +572,13 @@ pub async fn save_settings(settings: AppSettings, app_handle: AppHandle) -> Resu
         }
     }
 
-    write_settings_to_disk(&settings)
+    write_settings_to_disk(&settings)?;
+
+    if db_path_changed {
+        db.reconnect(new_db)?;
+    }
+
+    Ok(())
 }
 
 #[tauri::command]

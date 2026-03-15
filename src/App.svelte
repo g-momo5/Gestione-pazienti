@@ -32,6 +32,7 @@
   import { writeTextFile, removeFile, createDir } from '@tauri-apps/api/fs';
   import { join, dirname, appDataDir, documentDir, homeDir } from '@tauri-apps/api/path';
   import { open as openExternal } from '@tauri-apps/api/shell';
+  import { getName as getAppName, getVersion as getAppVersion, getTauriVersion } from '@tauri-apps/api/app';
   import { listen } from '@tauri-apps/api/event';
   import { invoke } from '@tauri-apps/api/tauri';
   import {
@@ -103,6 +104,15 @@
   const DEFAULT_REFERTI_HELPER = 'Placeholders: {nome} {cognome} {dn} ecc.';
   const ROOT_PROC_DIR = 'Schede procedurali';
   const DB_FILENAME = 'pazienti_tavi.db';
+  const APP_OWNER_LABEL = 'GMD Medical';
+  const UPDATE_REPO_LABEL = 'g-momo5/Gestione-pazienti';
+  const UPDATE_CHANNEL_LABEL = 'Release stabili';
+  let appInfo = {
+    name: 'Gestionale Pazienti TAVI',
+    version: '',
+    tauriVersion: '',
+    owner: APP_OWNER_LABEL,
+  };
   let settings = {
     dbPath: '',
     backupPath: '',
@@ -215,6 +225,24 @@
     if (state === 'error') return 'Errore controllo aggiornamenti';
     return state;
   };
+
+  async function loadAppInfo() {
+    try {
+      const [name, version, tauriVersion] = await Promise.all([
+        getAppName(),
+        getAppVersion(),
+        getTauriVersion(),
+      ]);
+      appInfo = {
+        ...appInfo,
+        name: name || appInfo.name,
+        version: version || appInfo.version,
+        tauriVersion: tauriVersion || appInfo.tauriVersion,
+      };
+    } catch (e) {
+      console.warn('Impossibile leggere metadati applicazione', e);
+    }
+  }
 
   async function setupUpdateProgressListener() {
     try {
@@ -619,6 +647,7 @@
     try {
       await invoke('save_settings', { settings });
       localStorage.setItem('tavi_settings', JSON.stringify(settings));
+      await refreshData();
       notifySuccess('Impostazioni salvate');
       return true;
     } catch (e) {
@@ -657,6 +686,7 @@
     let disposed = false;
 
     (async () => {
+      await loadAppInfo();
       await loadPersistedSettings();
       if (disposed) return;
       hydrateUpdateStateFromSettings();
@@ -1711,9 +1741,41 @@
           </div>
         </Card>
 
-        <div class="flex justify-end">
-          <Button variant="primary" on:click={validateAndSaveSettings}>Salva impostazioni</Button>
-        </div>
+        <Card padding="lg" class="border border-gray-200 space-y-4">
+          <div>
+            <h3 class="text-lg font-semibold text-textPrimary flex items-center gap-2">
+              <IconBadge icon="info" tone="neutral" /> Info applicazione
+            </h3>
+            <p class="text-sm text-textSecondary">Dettagli principali del software installato.</p>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            <p class="text-textSecondary">
+              Nome app:
+              <span class="font-semibold text-textPrimary ml-1">{appInfo.name || '-'}</span>
+            </p>
+            <p class="text-textSecondary">
+              Versione app:
+              <span class="font-semibold text-textPrimary ml-1">{appInfo.version || updateStatusValue.currentVersion || '-'}</span>
+            </p>
+            <p class="text-textSecondary">
+              Runtime Tauri:
+              <span class="font-semibold text-textPrimary ml-1">{appInfo.tauriVersion || '-'}</span>
+            </p>
+            <p class="text-textSecondary">
+              Proprietario:
+              <span class="font-semibold text-textPrimary ml-1">{appInfo.owner}</span>
+            </p>
+            <p class="text-textSecondary">
+              Canale update:
+              <span class="font-semibold text-textPrimary ml-1">{UPDATE_CHANNEL_LABEL}</span>
+            </p>
+            <p class="text-textSecondary">
+              Repository update:
+              <span class="font-semibold text-textPrimary ml-1">{UPDATE_REPO_LABEL}</span>
+            </p>
+          </div>
+        </Card>
       </div>
     {:else if currentView === 'patient-detail'}
       <div class="max-w-7xl mx-auto">
@@ -1725,9 +1787,19 @@
       </div>
     {/if}
   </div>
+  {#if currentView === 'settings'}
+    <div class="fixed right-4 bottom-20 z-50">
+      <Button variant="primary" on:click={validateAndSaveSettings}>
+        Salva impostazioni
+      </Button>
+    </div>
+  {/if}
   <footer class="fixed bottom-0 inset-x-0 border-t border-gray-200 bg-surface/95 backdrop-blur px-4 py-3 z-40">
-    <div class="max-w-7xl mx-auto text-center text-xs text-textSecondary">
-      Gestionale Pazienti TAVI • Uso riservato al personale autorizzato
+    <div class="max-w-7xl mx-auto text-center text-xs text-textSecondary leading-tight">
+      <p class="mt-1">
+        Proprietà {appInfo.owner} • Versione {appInfo.version || updateStatusValue.currentVersion || '-'}
+      </p>
+      <p>Gestionale Pazienti TAVI • Uso riservato al personale autorizzato</p>
     </div>
   </footer>
 </main>

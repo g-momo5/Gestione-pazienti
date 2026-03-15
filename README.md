@@ -81,5 +81,5 @@ database_TAVI/
 
 ## Licenza
 
-Proprietario - © 2024 Dr. Mohamed. Tutti i diritti riservati.
+Proprietario - © 2026 GMD Medical. Tutti i diritti riservati.
 Uso riservato al personale ospedaliero autorizzato.
