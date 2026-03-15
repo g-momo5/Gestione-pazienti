@@ -71,7 +71,6 @@ jobs:
         with:
           script: |
             const fs = require('node:fs');
-            const core = require('@actions/core');
 
             const config = JSON.parse(fs.readFileSync('src-tauri/tauri.conf.json', 'utf8'));
             const appVersion = String(config?.package?.version || '').trim();
