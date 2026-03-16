@@ -449,6 +449,22 @@ fn persist_or_error(settings: &AppSettings) -> Result<(), String> {
     write_settings_to_disk(settings).map_err(|e| format!("Impossibile salvare stato updater: {e}"))
 }
 
+fn fail_download_update(
+    settings: &mut AppSettings,
+    installer_path: &Path,
+    message: String,
+) -> Result<AppUpdateStatus, String> {
+    settings.update_state = Some(STATE_AVAILABLE.to_string());
+    settings.update_last_error = Some(message.clone());
+    settings.update_last_check = Some(now_iso());
+    settings.update_installer_path = None;
+    let _ = persist_or_error(settings);
+    if installer_path.exists() {
+        let _ = remove_file(installer_path);
+    }
+    Err(message)
+}
+
 #[tauri::command]
 pub async fn check_app_update(app_handle: AppHandle) -> Result<AppUpdateStatus, String> {
     let current_version = app_handle.package_info().version.to_string();
@@ -492,11 +508,11 @@ pub async fn download_app_update(app_handle: AppHandle) -> Result<AppUpdateStatu
         .update_state
         .clone()
         .unwrap_or_else(|| STATE_IDLE.to_string());
-    let version = settings
+    let mut version = settings
         .update_version
         .clone()
         .ok_or_else(|| "Nessun aggiornamento disponibile da scaricare".to_string())?;
-    let download_url = settings
+    let mut download_url = settings
         .update_download_url
         .clone()
         .ok_or_else(|| "URL aggiornamento mancante".to_string())?;
@@ -535,44 +551,100 @@ pub async fn download_app_update(app_handle: AppHandle) -> Result<AppUpdateStatu
         infer_asset_filename(&ManifestAsset::Url(download_url.clone()), version.as_str());
     let installer_path = cache_dir.join(file_name);
 
-    let mut fail = |message: String| -> Result<AppUpdateStatus, String> {
-        settings.update_state = Some(STATE_AVAILABLE.to_string());
-        settings.update_last_error = Some(message.clone());
-        settings.update_last_check = Some(now_iso());
-        settings.update_installer_path = None;
-        let _ = persist_or_error(&settings);
-        if installer_path.exists() {
-            let _ = remove_file(&installer_path);
-        }
-        Err(message)
-    };
-
     let client = match Client::builder().timeout(Duration::from_secs(600)).build() {
         Ok(c) => c,
-        Err(e) => return fail(format!("Impossibile inizializzare il client download: {e}")),
+        Err(e) => {
+            return fail_download_update(
+                &mut settings,
+                &installer_path,
+                format!("Impossibile inizializzare il client download: {e}"),
+            )
+        }
     };
 
     let response = match client
         .get(&download_url)
         .header("Accept", "application/octet-stream")
+        .header("User-Agent", UPDATE_HTTP_USER_AGENT)
         .send()
         .await
     {
         Ok(r) => r,
-        Err(e) => return fail(format!("Errore durante il download aggiornamento: {e}")),
+        Err(e) => {
+            return fail_download_update(
+                &mut settings,
+                &installer_path,
+                format!("Errore durante il download aggiornamento: {e}"),
+            )
+        }
+    };
+
+    let response = if response.status() == reqwest::StatusCode::NOT_FOUND {
+        // Fallback robusto: se il link nel manifest è obsoleto/sbagliato, rilegge asset da releases/latest.
+        if let Ok(latest_manifest) = fetch_manifest_from_github_latest(&client).await {
+            if apply_manifest_to_settings(&current_version, &latest_manifest, &mut settings).is_ok() {
+                if let Some(refreshed_url) = settings.update_download_url.clone() {
+                    if refreshed_url != download_url {
+                        download_url = refreshed_url;
+                        version = settings.update_version.clone().unwrap_or(version);
+                        settings.update_state = Some(STATE_DOWNLOADING.to_string());
+                        settings.update_deferred = Some(false);
+                        settings.update_last_error = None;
+                        settings.update_last_check = Some(now_iso());
+                        if let Err(e) = persist_or_error(&settings) {
+                            return fail_download_update(&mut settings, &installer_path, e);
+                        }
+
+                        match client
+                            .get(&download_url)
+                            .header("Accept", "application/octet-stream")
+                            .header("User-Agent", UPDATE_HTTP_USER_AGENT)
+                            .send()
+                            .await
+                        {
+                            Ok(r) => r,
+                            Err(e) => {
+                                return fail_download_update(
+                                    &mut settings,
+                                    &installer_path,
+                                    format!("Errore durante il download aggiornamento (retry): {e}"),
+                                )
+                            }
+                        }
+                    } else {
+                        response
+                    }
+                } else {
+                    response
+                }
+            } else {
+                response
+            }
+        } else {
+            response
+        }
+    } else {
+        response
     };
 
     if !response.status().is_success() {
-        return fail(format!(
-            "Download aggiornamento fallito (HTTP {})",
-            response.status()
-        ));
+        return fail_download_update(
+            &mut settings,
+            &installer_path,
+            format!("Download aggiornamento fallito (HTTP {})", response.status()),
+        );
     }
 
     let total = response.content_length();
     let mut file = match File::create(&installer_path) {
         Ok(f) => f,
-        Err(e) => return fail(format!("Impossibile creare file aggiornamento locale: {e}")),
+        Err(e) => {
+            return fail_download_update(
+                &mut settings,
+                &installer_path,
+                format!("Impossibile creare file aggiornamento locale: {e}"),
+            )
+        }
     };
 
     emit_progress(&app_handle, &version, 0, total);
@@ -583,11 +655,21 @@ pub async fn download_app_update(app_handle: AppHandle) -> Result<AppUpdateStatu
     while let Some(chunk) = stream.next().await {
         let chunk = match chunk {
             Ok(c) => c,
-            Err(e) => return fail(format!("Errore stream download aggiornamento: {e}")),
+            Err(e) => {
+                return fail_download_update(
+                    &mut settings,
+                    &installer_path,
+                    format!("Errore stream download aggiornamento: {e}"),
+                )
+            }
         };
 
         if let Err(e) = file.write_all(&chunk) {
-            return fail(format!("Errore scrittura file aggiornamento: {e}"));
+            return fail_download_update(
+                &mut settings,
+                &installer_path,
+                format!("Errore scrittura file aggiornamento: {e}"),
+            );
         }
 
         downloaded += chunk.len() as u64;
@@ -595,7 +677,11 @@ pub async fn download_app_update(app_handle: AppHandle) -> Result<AppUpdateStatu
     }
 
     if let Err(e) = file.flush() {
-        return fail(format!("Errore finalizzazione file aggiornamento: {e}"));
+        return fail_download_update(
+            &mut settings,
+            &installer_path,
+            format!("Errore finalizzazione file aggiornamento: {e}"),
+        );
     }
 
     settings.update_state = Some(STATE_DOWNLOADED.to_string());

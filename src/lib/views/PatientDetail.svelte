@@ -34,9 +34,13 @@
 
   pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
   const todayIso = new Date().toISOString().split('T')[0];
+  const AMBULATORIO_STANDARD_SLOTS = ['08:30', '09:00', '09:45', '10:30', '11:15'];
+  const AMBULATORIO_CUSTOM_TIME_VALUE = '__custom_time__';
 
   export let patient = null;
   export let loading = false;
+  export let allPatients = [];
+  export let ambulatorioOpenDates = [];
   export let onBack = () => {};
 
   const ECG_OPTIONS = [
@@ -214,6 +218,14 @@
   let anagraficaDateInvalid = false;
   let ambulatorioDateInvalid = false;
   let ambulatorioTimeInvalid = false;
+  let ambulatorioManualDate = false;
+  let ambulatorioSelectedDate = '';
+  let ambulatorioTimeSelection = '';
+  let ambulatorioCustomTime = '';
+  let ambulatorioDateOptions = [];
+  let ambulatorioTimeOptions = [];
+  let ambulatorioAvailableStandardSlots = [];
+  let ambulatorioManualDateOutsideOpenDates = false;
 
   function loadChecklistFromStorage(id) {
     const saved = localStorage.getItem(`patient-checklist-${id}`);
@@ -250,6 +262,15 @@
         specializzandoTitolo: 'Dott.',
         specializzandoNome: '',
       };
+      ambulatorioManualDate = false;
+      ambulatorioSelectedDate = '';
+      ambulatorioTimeSelection = '';
+      ambulatorioCustomTime = '';
+      ambulatorioDateOptions = [];
+      ambulatorioTimeOptions = [];
+      ambulatorioAvailableStandardSlots = [];
+      ambulatorioDateInvalid = false;
+      ambulatorioTimeInvalid = false;
       return;
     }
 
@@ -266,6 +287,9 @@
       specializzandoTitolo: patient.patient.medico_specializzando_titolo || 'Dott.',
       specializzandoNome: patient.patient.medico_specializzando_nome || '',
     };
+    ambulatorioDateInvalid = false;
+    ambulatorioTimeInvalid = false;
+    syncAmbulatorioAppointmentControls(true);
   }
 
   function loadSchedaProcedurale() {
@@ -411,6 +435,21 @@
   $: bioprotesiSizeOptions = getValveSizes(schedaProceduraleForm.bioprotesiModello);
   $: eligibleForTavi = ELIGIBLE_TAVI_STATUSES.includes(statusSelection || patient?.status || '');
   $: isDaValutare = (statusSelection || patient?.status || '') === 'Da valutare';
+  $: if (isDaValutare) {
+    allPatients;
+    ambulatorioOpenDates;
+    ambulatorioForm.dataVisita;
+    ambulatorioForm.oraVisita;
+    ambulatorioTimeSelection;
+    ambulatorioCustomTime;
+    ambulatorioManualDate;
+    syncAmbulatorioAppointmentControls(false);
+  }
+  $: ambulatorioManualDateOutsideOpenDates =
+    isDaValutare &&
+    ambulatorioManualDate &&
+    isValidISODate(ambulatorioForm.dataVisita) &&
+    !sanitizeOpenDates(ambulatorioOpenDates).includes(ambulatorioForm.dataVisita);
 
   $: {
     const creat = normalizeNumber(schedaProceduraleForm.creatinina);
@@ -495,6 +534,155 @@
     const num = Number(value);
     return Number.isFinite(num) ? num : null;
   };
+
+  const normalizeIsoDateValue = (value) => String(value || '').split('T')[0];
+  const sanitizeOpenDates = (dates) => {
+    if (!Array.isArray(dates)) return [];
+    return [...new Set(dates.map((value) => normalizeIsoDateValue(value)).filter((value) => isValidISODate(value)))].sort();
+  };
+  const normalizeSlotTime = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const normalized = raw.replace('.', ':');
+    if (!/^\d{1,2}:\d{1,2}$/.test(normalized)) return raw;
+    const [hourRaw, minuteRaw] = normalized.split(':');
+    const hour = Number(hourRaw);
+    const minute = Number(minuteRaw);
+    if (!Number.isInteger(hour) || !Number.isInteger(minute)) return raw;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return raw;
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  };
+  const isValidSlotTime = (value) => /^\d{2}:\d{2}$/.test(value || '');
+  const formatSlotLabel = (slot) => {
+    const normalized = normalizeSlotTime(slot);
+    if (!isValidSlotTime(normalized)) return slot || '-';
+    const [hour, minute] = normalized.split(':');
+    return `${Number(hour)}.${minute}`;
+  };
+  const isStandardSlot = (slot) => AMBULATORIO_STANDARD_SLOTS.includes(normalizeSlotTime(slot));
+  const getCurrentPatientId = () => patient?.patient?.id ?? null;
+  const getBookedStandardSlotsForDate = (dateIso, excludePatientId = null) => {
+    if (!isValidISODate(dateIso)) return new Set();
+    const booked = new Set();
+    for (const entry of allPatients || []) {
+      const entryId = entry?.patient?.id ?? entry?.id ?? null;
+      if (excludePatientId !== null && entryId === excludePatientId) continue;
+      const visitDate = normalizeIsoDateValue(entry?.patient?.ambulatorio_data_visita);
+      if (visitDate !== dateIso) continue;
+      const visitTime = normalizeSlotTime(entry?.patient?.ambulatorio_orario_visita);
+      if (!isStandardSlot(visitTime)) continue;
+      booked.add(visitTime);
+    }
+    return booked;
+  };
+  const buildAmbulatorioDateOptions = () => {
+    const currentDate = normalizeIsoDateValue(ambulatorioForm.dataVisita);
+    const patientId = getCurrentPatientId();
+    const options = sanitizeOpenDates(ambulatorioOpenDates)
+      .map((dateIso) => {
+        const booked = getBookedStandardSlotsForDate(dateIso, patientId);
+        const freeCount = AMBULATORIO_STANDARD_SLOTS.filter((slot) => !booked.has(slot)).length;
+        return { dateIso, freeCount };
+      })
+      .filter((entry) => entry.freeCount > 0)
+      .map((entry) => ({
+        value: entry.dateIso,
+        label: `${formatDateIT(entry.dateIso)} (${entry.freeCount} slot liberi)`,
+      }));
+
+    if (isValidISODate(currentDate) && !options.some((entry) => entry.value === currentDate)) {
+      options.unshift({
+        value: currentDate,
+        label: `${formatDateIT(currentDate)} (data attuale)`,
+      });
+    }
+
+    return options;
+  };
+  const syncAmbulatorioAppointmentControls = (initialize = false) => {
+    const dateValue = normalizeIsoDateValue(ambulatorioForm.dataVisita);
+    const timeValue = normalizeSlotTime(ambulatorioForm.oraVisita);
+
+    ambulatorioDateOptions = buildAmbulatorioDateOptions();
+
+    const hasDateInOptions = ambulatorioDateOptions.some((option) => option.value === dateValue);
+    if (initialize) {
+      ambulatorioManualDate = Boolean(dateValue) && !hasDateInOptions;
+      ambulatorioSelectedDate = hasDateInOptions ? dateValue : '';
+    } else if (!ambulatorioManualDate) {
+      ambulatorioSelectedDate = hasDateInOptions ? dateValue : '';
+    }
+
+    const baseDateForSlots =
+      ambulatorioManualDate ? dateValue : ambulatorioSelectedDate;
+    const bookedStandardSlots = getBookedStandardSlotsForDate(baseDateForSlots, getCurrentPatientId());
+    ambulatorioAvailableStandardSlots = AMBULATORIO_STANDARD_SLOTS.filter(
+      (slot) => !bookedStandardSlots.has(slot)
+    );
+
+    ambulatorioTimeOptions = ambulatorioAvailableStandardSlots.map((slot) => ({
+      value: slot,
+      label: formatSlotLabel(slot),
+    }));
+    ambulatorioTimeOptions.push({
+      value: AMBULATORIO_CUSTOM_TIME_VALUE,
+      label: 'Orario personalizzato',
+    });
+
+    if (initialize && isStandardSlot(timeValue)) {
+      ambulatorioTimeSelection = timeValue;
+      ambulatorioCustomTime = '';
+      ambulatorioForm.oraVisita = timeValue;
+      ambulatorioTimeInvalid = false;
+      return;
+    }
+
+    if (initialize && isValidSlotTime(timeValue)) {
+      ambulatorioTimeSelection = AMBULATORIO_CUSTOM_TIME_VALUE;
+      ambulatorioCustomTime = timeValue;
+      ambulatorioForm.oraVisita = timeValue;
+      return;
+    }
+
+    if (ambulatorioTimeSelection === AMBULATORIO_CUSTOM_TIME_VALUE) {
+      ambulatorioForm.oraVisita = ambulatorioCustomTime;
+      return;
+    }
+
+    if (isStandardSlot(ambulatorioTimeSelection)) {
+      const stillAvailable = ambulatorioAvailableStandardSlots.includes(ambulatorioTimeSelection);
+      if (stillAvailable) {
+        ambulatorioForm.oraVisita = ambulatorioTimeSelection;
+      } else {
+        ambulatorioTimeSelection = '';
+        ambulatorioForm.oraVisita = '';
+      }
+      return;
+    }
+
+    if (initialize) {
+      ambulatorioTimeSelection = '';
+      ambulatorioCustomTime = '';
+      ambulatorioForm.oraVisita = '';
+    }
+  };
+  function applySelectedAmbulatorioDate(value) {
+    ambulatorioSelectedDate = value;
+    if (!ambulatorioManualDate) {
+      ambulatorioForm.dataVisita = value;
+      ambulatorioDateInvalid = false;
+    }
+  }
+  function applySelectedAmbulatorioTime(value) {
+    ambulatorioTimeSelection = value;
+    if (value === AMBULATORIO_CUSTOM_TIME_VALUE) {
+      ambulatorioForm.oraVisita = ambulatorioCustomTime;
+      return;
+    }
+    ambulatorioCustomTime = '';
+    ambulatorioTimeInvalid = false;
+    ambulatorioForm.oraVisita = value;
+  }
 
   function capitalizeWordsStrict(value) {
     if (!value) return '';
@@ -717,10 +905,36 @@
 
   async function saveAmbulatorioAppointment() {
     if (!isDaValutare) return false;
-    if (!requireValue(ambulatorioForm.dataVisita, 'Inserisci la data dell\'appuntamento')) return false;
-    if (!requireValid(ambulatorioDateInvalid, 'Data appuntamento non valida')) return false;
-    if (!requireValue(ambulatorioForm.oraVisita, 'Inserisci l\'orario dell\'appuntamento')) return false;
-    if (!requireValid(ambulatorioTimeInvalid, 'Orario appuntamento non valido')) return false;
+
+    const selectedDate = normalizeIsoDateValue(
+      ambulatorioManualDate
+        ? ambulatorioForm.dataVisita
+        : (ambulatorioSelectedDate || ambulatorioForm.dataVisita)
+    );
+    ambulatorioForm.dataVisita = selectedDate;
+
+    if (!requireValue(selectedDate, 'Inserisci la data dell\'appuntamento')) return false;
+    if (!requireCondition(isValidISODate(selectedDate), 'Data appuntamento non valida')) return false;
+    if (ambulatorioManualDate) {
+      if (!requireValid(ambulatorioDateInvalid, 'Data appuntamento non valida')) return false;
+    } else {
+      ambulatorioDateInvalid = false;
+    }
+
+    if (ambulatorioTimeSelection === AMBULATORIO_CUSTOM_TIME_VALUE) {
+      const customTime = normalizeSlotTime(ambulatorioCustomTime);
+      ambulatorioForm.oraVisita = customTime;
+      if (!requireValue(customTime, 'Inserisci l\'orario dell\'appuntamento')) return false;
+      if (!requireCondition(isValidSlotTime(customTime), 'Orario appuntamento non valido')) return false;
+      if (!requireValid(ambulatorioTimeInvalid, 'Orario appuntamento non valido')) return false;
+    } else {
+      const selectedTime = normalizeSlotTime(ambulatorioTimeSelection);
+      ambulatorioTimeInvalid = false;
+      ambulatorioForm.oraVisita = selectedTime;
+      if (!requireValue(selectedTime, 'Inserisci l\'orario dell\'appuntamento')) return false;
+      if (!requireCondition(isValidSlotTime(selectedTime), 'Orario appuntamento non valido')) return false;
+    }
+
     return await saveAmbulatorio();
   }
 
@@ -1075,19 +1289,6 @@
       altezza: patient.patient.altezza ?? '',
       peso: patient.patient.peso ?? '',
     };
-    ambulatorioForm = {
-      fattori: patient.patient.ambulatorio_fattori || [],
-      dataVisita: patient.patient.ambulatorio_data_visita || '',
-      oraVisita: patient.patient.ambulatorio_orario_visita || '',
-      anamnesi: stripFormatting(patient.patient.anamnesi_cardiologica || ''),
-      apr: stripFormatting(patient.patient.apr || ''),
-      visita: stripFormatting(patient.patient.visita_odierna || ''),
-      conclusioni: stripFormatting(patient.patient.conclusioni || ''),
-      medicoTitolo: patient.patient.medico_titolo || 'Dott.',
-      medicoNome: patient.patient.medico_nome || 'Pierluigi Merella',
-      specializzandoTitolo: patient.patient.medico_specializzando_titolo || 'Dott.',
-      specializzandoNome: patient.patient.medico_specializzando_nome || '',
-    };
     taviDate = patient.patient.data_tavi || '';
     anagraficaDateInvalid = false;
     lastLoadedChecklistId = patient.patient.id;
@@ -1188,17 +1389,73 @@
           </div>
           <div class="flex flex-col gap-2">
             {#if isDaValutare}
-              <div class="grid grid-cols-2 gap-2">
-                <MaskedDateInput
-                  label=""
-                  bind:value={ambulatorioForm.dataVisita}
-                  bind:invalid={ambulatorioDateInvalid}
-                />
-                <MaskedTimeInput
-                  label=""
-                  bind:value={ambulatorioForm.oraVisita}
-                  bind:invalid={ambulatorioTimeInvalid}
-                />
+              <div class="space-y-2">
+                <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-2 items-end">
+                  <Select
+                    label=""
+                    bind:value={ambulatorioSelectedDate}
+                    options={ambulatorioDateOptions}
+                    placeholder={ambulatorioDateOptions.length > 0 ? 'Seleziona data disponibile' : 'Nessuna data utile disponibile'}
+                    disabled={ambulatorioManualDate || ambulatorioDateOptions.length === 0}
+                    on:change={(event) => applySelectedAmbulatorioDate(event.detail?.value ?? ambulatorioSelectedDate)}
+                  />
+                  <Button
+                    variant="text"
+                    size="sm"
+                    on:click={() => {
+                      ambulatorioManualDate = !ambulatorioManualDate;
+                      if (ambulatorioManualDate) {
+                        ambulatorioForm.dataVisita = ambulatorioForm.dataVisita || ambulatorioSelectedDate;
+                      } else {
+                        const fallbackDate = ambulatorioSelectedDate || ambulatorioDateOptions[0]?.value || '';
+                        ambulatorioSelectedDate = fallbackDate;
+                        ambulatorioForm.dataVisita = fallbackDate;
+                        ambulatorioDateInvalid = false;
+                      }
+                    }}
+                  >
+                    {ambulatorioManualDate ? 'Usa elenco date' : 'Data manuale'}
+                  </Button>
+                </div>
+
+                {#if ambulatorioManualDate}
+                  <MaskedDateInput
+                    label=""
+                    bind:value={ambulatorioForm.dataVisita}
+                    bind:invalid={ambulatorioDateInvalid}
+                  />
+                {/if}
+                {#if ambulatorioManualDateOutsideOpenDates}
+                  <p class="text-xs text-amber-700">
+                    Data fuori dalle date disponibili: il salvataggio è consentito ma consigliato solo in casi eccezionali.
+                  </p>
+                {/if}
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Select
+                    label=""
+                    bind:value={ambulatorioTimeSelection}
+                    options={ambulatorioTimeOptions}
+                    placeholder="Seleziona orario"
+                    on:change={(event) => applySelectedAmbulatorioTime(event.detail?.value ?? ambulatorioTimeSelection)}
+                  />
+                  {#if ambulatorioTimeSelection === AMBULATORIO_CUSTOM_TIME_VALUE}
+                    <MaskedTimeInput
+                      label=""
+                      bind:value={ambulatorioCustomTime}
+                      bind:invalid={ambulatorioTimeInvalid}
+                      on:input={() => {
+                        ambulatorioForm.oraVisita = ambulatorioCustomTime;
+                      }}
+                    />
+                  {:else}
+                    <div class="h-10 rounded-lg border border-dashed border-gray-200 bg-surface-strong text-textSecondary flex items-center justify-center text-xs">
+                      {ambulatorioAvailableStandardSlots.length > 0
+                        ? `${ambulatorioAvailableStandardSlots.length} slot standard disponibili`
+                        : 'Nessuno slot standard libero'}
+                    </div>
+                  {/if}
+                </div>
               </div>
               <Button
                 variant="secondary"

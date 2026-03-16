@@ -23,6 +23,7 @@ pub struct AppSettings {
     pub backup_path: Option<String>,
     pub referti_amb_path: Option<String>,
     pub referti_proc_path: Option<String>,
+    pub ambulatorio_open_dates: Option<Vec<String>>,
     pub naming_amb: Option<String>,
     pub naming_proc: Option<String>,
     pub auto_open_referti: Option<bool>,
@@ -703,6 +704,10 @@ fn format_date_ita(date_iso: &str) -> String {
         .unwrap_or_else(|_| date_iso.to_string())
 }
 
+fn format_date_filename(date_iso: &str) -> String {
+    format_date_ita(date_iso).replace('/', ".")
+}
+
 fn sanitize_filename(name: &str) -> String {
     name.chars()
         .map(|c| if ['\\', '/', ':', '*', '?', '"', '<', '>', '|'].contains(&c) { '_' } else { c })
@@ -831,6 +836,12 @@ pub async fn generate_ambulatorio_referto(
 
     let p = patient.patient;
     let visit_date = Local::now().format("%d/%m/%Y").to_string();
+    let visit_date_for_filename = p
+        .ambulatorio_data_visita
+        .as_deref()
+        .map(format_date_filename)
+        .filter(|d| !d.trim().is_empty())
+        .unwrap_or_else(|| Local::now().format("%d.%m.%Y").to_string());
 
     let sig_sigra = match p.sesso.as_deref() {
         Some("F") | Some("f") => "Sig.ra".to_string(),
@@ -972,7 +983,35 @@ pub async fn generate_ambulatorio_referto(
     let out_dir = resolve_referti_dir(&settings, "amb", &app_handle);
     create_dir_all(&out_dir).map_err(|_| "Impossibile creare cartella referti".to_string())?;
 
-    let filename = sanitize_filename(&format!("{} {}.docx", p.cognome, p.nome));
+    let default_name = "{cognome} {nome} {data_visita}.docx";
+    let naming_pattern = settings
+        .naming_amb
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(default_name);
+
+    let mut filename = naming_pattern.to_string();
+    let dn_for_filename = format_date_filename(&p.data_nascita);
+    let filename_replacements: [(&str, String); 4] = [
+        ("nome", p.nome.clone()),
+        ("cognome", p.cognome.clone()),
+        ("dn", dn_for_filename),
+        ("data_visita", visit_date_for_filename.clone()),
+    ];
+    for (key, value) in filename_replacements {
+        let placeholder = format!("{{{key}}}");
+        filename = filename.replace(&placeholder, &value);
+    }
+
+    if filename.trim().is_empty() {
+        filename = format!("{} {} {}", p.cognome, p.nome, visit_date_for_filename);
+    }
+    if !filename.to_lowercase().ends_with(".docx") {
+        filename.push_str(".docx");
+    }
+
+    let filename = sanitize_filename(&filename);
     let out_path = out_dir.join(filename);
 
     let mut out_file =

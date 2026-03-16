@@ -9,10 +9,10 @@
   import Select from './lib/components/ui/Select.svelte';
   import Checkbox from './lib/components/ui/Checkbox.svelte';
   import IconBadge from './lib/components/ui/IconBadge.svelte';
-  import Icon from './lib/components/ui/Icon.svelte';
   import CloseButton from './lib/components/ui/CloseButton.svelte';
   import BackCircleButton from './lib/components/ui/BackCircleButton.svelte';
   import PatientDetail from './lib/views/PatientDetail.svelte';
+  import AmbulatorioScheduleView from './lib/views/AmbulatorioScheduleView.svelte';
   import { requireCondition } from './lib/utils/validationHelpers.js';
   import { notifyError, notifySuccess } from './lib/utils/notify.js';
   import {
@@ -26,7 +26,7 @@
     createPatient,
     updatePatient
   } from './lib/stores/patientStore.js';
-  import { formatDateIT, calculateAge, getTodayISO, formatTime } from './lib/utils/dateUtils.js';
+  import { formatDateIT, calculateAge, getTodayISO } from './lib/utils/dateUtils.js';
   import { loadPlaces } from './lib/utils/placeSuggestions.js';
   import { open as openDialog } from '@tauri-apps/api/dialog';
   import { writeTextFile, removeFile, createDir } from '@tauri-apps/api/fs';
@@ -64,9 +64,7 @@
   let headerHeight = HEADER_MAX;
   let selectedPatientId = null;
   let loadingDetail = false;
-  let ambulatorioListDate = getTodayISO();
-  let ambulatorioPatients = [];
-  let ambulatorioCount = 0;
+  let openAmbulatorioDates = [];
   const PLACE_DATA = loadPlaces();
   let showNewPatientModal = false;
   let savingPatient = false;
@@ -97,11 +95,10 @@
   let noteModalPatient = null;
   let noteModalValue = '';
   let savingNote = false;
-  let ambulatorioCountLabel = 'pazienti';
   // Impostazioni (solo UI locale per ora)
   const DEFAULT_REFERTI_PROC_NAMING = 'Scheda procedurale - {cognome} {nome}.docx';
-  const DEFAULT_REFERTI_AMB_NAMING = 'Referto ambulatorio - {cognome} {nome}.docx';
-  const DEFAULT_REFERTI_HELPER = 'Placeholders: {nome} {cognome} {dn} ecc.';
+  const DEFAULT_REFERTI_AMB_NAMING = '{cognome} {nome} {data_visita}.docx';
+  const DEFAULT_REFERTI_HELPER = 'Placeholders: {nome} {cognome} {dn} {data_visita} ecc.';
   const ROOT_PROC_DIR = 'Schede procedurali';
   const DB_FILENAME = 'pazienti_tavi.db';
   const APP_OWNER_LABEL = 'GMD Medical';
@@ -118,6 +115,7 @@
     backupPath: '',
     refertiAmbPath: '',
     refertiProcPath: '',
+    ambulatorioOpenDates: [],
     namingAmb: DEFAULT_REFERTI_AMB_NAMING,
     namingProc: DEFAULT_REFERTI_PROC_NAMING,
     autoOpenReferti: true,
@@ -414,17 +412,10 @@
     : 0;
 
   const isIsoDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value || '');
-  const toIsoDate = (date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
   const normalizeIsoDate = (value) => String(value || '').split('T')[0];
-  const addDaysToIso = (iso, delta) => {
-    const base = isIsoDate(iso) ? new Date(`${iso}T00:00:00`) : new Date();
-    base.setDate(base.getDate() + delta);
-    return toIsoDate(base);
+  const sanitizeOpenDates = (dates) => {
+    if (!Array.isArray(dates)) return [];
+    return [...new Set(dates.map((value) => normalizeIsoDate(value)).filter((value) => isIsoDate(value)))].sort();
   };
 
   const safeJoin = async (base, ...parts) => {
@@ -549,7 +540,11 @@
       console.error('Errore nel calcolo dei percorsi di default', e);
     }
 
-    const finalSettings = { ...next, ...pickDefined(defaults) };
+    const finalSettings = {
+      ...next,
+      ...pickDefined(defaults),
+      ambulatorioOpenDates: sanitizeOpenDates(next.ambulatorioOpenDates),
+    };
 
     const changed =
       JSON.stringify(pickDefined(finalSettings)) !== JSON.stringify(pickDefined(initialSnapshot));
@@ -618,6 +613,7 @@
         ...settings,
         ...derived,
         backupPath: normalizedBackup,
+        ambulatorioOpenDates: sanitizeOpenDates(settings.ambulatorioOpenDates),
       };
     } catch (e) {
       console.warn('Normalizzazione percorsi in salvataggio impostazioni fallita', e);
@@ -645,6 +641,10 @@
     }
 
     try {
+      settings = {
+        ...settings,
+        ambulatorioOpenDates: sanitizeOpenDates(settings.ambulatorioOpenDates),
+      };
       await invoke('save_settings', { settings });
       localStorage.setItem('tavi_settings', JSON.stringify(settings));
       await refreshData();
@@ -777,7 +777,6 @@
   }
 
   function openAmbulatorioList() {
-    ambulatorioListDate = getTodayISO();
     currentView = 'ambulatorio-list';
   }
 
@@ -802,12 +801,30 @@
     }
   }
 
-  function shiftAmbulatorioDate(delta) {
-    ambulatorioListDate = addDaysToIso(ambulatorioListDate, delta);
-  }
+  async function persistAmbulatorioOpenDates(nextDates, opts = {}) {
+    const normalizedDates = sanitizeOpenDates(nextDates);
+    const previousSettings = { ...settings };
+    const nextSettings = {
+      ...settings,
+      ambulatorioOpenDates: normalizedDates,
+    };
 
-  function setAmbulatorioToday() {
-    ambulatorioListDate = getTodayISO();
+    settings = nextSettings;
+    persistSettingsCache(nextSettings);
+
+    try {
+      await invoke('save_settings', { settings: nextSettings });
+      if (opts.successMessage) {
+        notifySuccess(opts.successMessage);
+      }
+      return true;
+    } catch (e) {
+      console.error(e);
+      settings = previousSettings;
+      persistSettingsCache(previousSettings);
+      notifyError(e, 'Errore durante il salvataggio delle date ambulatorio');
+      return false;
+    }
   }
 
   function openNoteModal(patient) {
@@ -891,19 +908,7 @@
     return item.codice_catastale || item.codice || null;
   };
 
-  $: ambulatorioPatients = ($patients || [])
-    .filter((entry) => normalizeIsoDate(entry?.patient?.ambulatorio_data_visita) === ambulatorioListDate)
-    .sort((a, b) => {
-      const aLast = (a?.patient?.cognome || '').toLowerCase();
-      const bLast = (b?.patient?.cognome || '').toLowerCase();
-      if (aLast !== bLast) return aLast.localeCompare(bLast);
-      const aFirst = (a?.patient?.nome || '').toLowerCase();
-      const bFirst = (b?.patient?.nome || '').toLowerCase();
-      return aFirst.localeCompare(bFirst);
-    });
-
-  $: ambulatorioCount = ambulatorioPatients.length;
-  $: ambulatorioCountLabel = ambulatorioCount === 1 ? 'paziente' : 'pazienti';
+  $: openAmbulatorioDates = sanitizeOpenDates(settings.ambulatorioOpenDates);
 
   const findPlaceCode = (value) => {
     if (!value || !value.trim()) return '';
@@ -1213,7 +1218,7 @@
                   </Button>
                 {/if}
                 <Button variant="text" size="sm" on:click={deferUpdatePrompt}>
-                  Dopo
+                  {updateStatusValue.state === 'downloaded' ? 'Installa dopo' : 'Scarica dopo'}
                 </Button>
               </div>
             </div>
@@ -1387,198 +1392,15 @@
         {/each}
       </div>
 
-      {#if noteModalOpen}
-        <div
-          class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-        >
-          <div
-            class="bg-surface rounded-xl shadow-xl w-full max-w-lg overflow-hidden"
-            role="dialog"
-            aria-modal="true"
-            tabindex="-1"
-          >
-            <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
-              <div>
-                <h3 class="text-lg font-semibold text-textPrimary">Note paziente</h3>
-                {#if noteModalPatient?.patient}
-                  <p class="text-sm text-textSecondary">
-                    {noteModalPatient.patient.nome} {noteModalPatient.patient.cognome}
-                  </p>
-                {/if}
-              </div>
-              <Button variant="text" size="sm" on:click={closeNoteModal}>Chiudi</Button>
-            </div>
-            <div class="p-5 space-y-3">
-              <label class="text-sm font-medium text-textPrimary block" for="noteModalText">Note</label>
-              <textarea
-                id="noteModalText"
-                class="w-full min-h-[160px] px-3 py-2 border rounded-lg border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                bind:value={noteModalValue}
-                placeholder="Aggiungi note cliniche o logistiche"
-              ></textarea>
-            </div>
-            <div class="px-5 py-4 border-t border-gray-200 flex justify-end gap-2">
-              <Button variant="text" size="sm" on:click={closeNoteModal}>Annulla</Button>
-              <Button variant="primary" size="sm" disabled={savingNote} on:click={saveNote}>
-                {savingNote ? 'Salvataggio...' : 'Salva note'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      {/if}
     {:else if currentView === 'ambulatorio-list'}
-      <div class="max-w-7xl mx-auto space-y-6">
-        <div class="space-y-2">
-          <div class="flex items-start gap-3">
-            <BackCircleButton onClick={backToHome} />
-            <div>
-              <h2 class="text-2xl font-bold text-textPrimary">Visite ambulatoriali</h2>
-              <p class="text-textSecondary">Seleziona la data per vedere l’elenco dei pazienti.</p>
-            </div>
-          </div>
-        </div>
-
-        <Card padding="lg" class="border border-gray-200">
-          <div class="flex flex-wrap items-end gap-4 justify-between">
-            <div class="flex flex-wrap items-end gap-4">
-              <div class="flex items-center gap-2">
-                <Button variant="secondary" size="sm" on:click={() => shiftAmbulatorioDate(-1)}>
-                  <Icon name="chevronLeft" size={20} class="text-textPrimary" />
-                </Button>
-                <Button variant="secondary" size="sm" on:click={setAmbulatorioToday}>
-                  Oggi
-                </Button>
-                <Button variant="secondary" size="sm" on:click={() => shiftAmbulatorioDate(1)}>
-                  <Icon name="chevronRight" size={20} class="text-textPrimary" />
-                </Button>
-              </div>
-              <div class="w-56">
-                <MaskedDateInput
-                  label="Data visita"
-                  bind:value={ambulatorioListDate}
-                />
-              </div>
-            </div>
-            <div class="flex items-center gap-2">
-              <span class="text-sm text-textSecondary">Totale</span>
-              <span class="px-3 py-1 rounded-full text-sm font-medium bg-primary/10 text-primary">
-                {ambulatorioCount} {ambulatorioCountLabel}
-              </span>
-            </div>
-          </div>
-        </Card>
-
-        <div class="bg-surface rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-          <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-            <h3 class="text-lg font-semibold text-textPrimary">
-              {formatDateIT(ambulatorioListDate)
-                ? `Visite del ${formatDateIT(ambulatorioListDate)}`
-                : 'Visite ambulatoriali'}
-            </h3>
-          </div>
-
-          {#if ambulatorioPatients.length === 0}
-            <div class="px-6 py-12 text-center text-textSecondary">
-              Nessuna visita in questa data
-            </div>
-          {:else}
-            <div class="overflow-auto">
-              <table class="w-full">
-                <thead class="bg-surface-strong border-b border-gray-200">
-                  <tr>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                      Data visita
-                    </th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                      Ora
-                    </th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                      Paziente
-                    </th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                      Priorità
-                    </th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                      Età
-                    </th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                      Stato
-                    </th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                      Telefono
-                    </th>
-                    <th class="px-4 py-2 text-left text-xs font-medium text-textSecondary uppercase tracking-wider">
-                      Azioni
-                    </th>
-                  </tr>
-                </thead>
-                <tbody class="bg-surface divide-y divide-gray-200">
-                  {#each ambulatorioPatients as patient}
-                    <tr
-                      on:click={() => openPatient(patient)}
-                      class="hover:bg-surface-stronger cursor-pointer transition-colors"
-                    >
-                      <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
-                        {formatDateIT(patient.patient?.ambulatorio_data_visita)}
-                      </td>
-                      <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
-                        {formatTime(patient.patient?.ambulatorio_orario_visita) || '-'}
-                      </td>
-                      <td class="px-4 py-2 whitespace-nowrap">
-                        <div class="font-medium text-textPrimary">
-                          {patient.patient?.nome} {patient.patient?.cognome}
-                        </div>
-                        {#if patient.patient?.codice_fiscale}
-                          <div class="text-sm text-textSecondary">
-                            {patient.patient?.codice_fiscale}
-                          </div>
-                        {/if}
-                      </td>
-                      <td class="px-4 py-2 whitespace-nowrap">
-                        {#if getPriorityInfo(patient.patient?.priority)}
-                          {@const pr = getPriorityInfo(patient.patient?.priority)}
-                          <span class={`px-2.5 py-1 rounded-full text-xs font-medium ${pr.class}`}>
-                            {pr.label}
-                          </span>
-                        {:else}
-                          <span class="text-textSecondary">-</span>
-                        {/if}
-                      </td>
-                      <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
-                        {#if patient.patient?.data_nascita}
-                          {calculateAge(patient.patient?.data_nascita)} anni
-                        {:else}
-                          -
-                        {/if}
-                      </td>
-                      <td class="px-4 py-2 whitespace-nowrap">
-                        <span class={`px-2.5 py-1 rounded-full text-xs font-medium ${getStatusColor(patient.status)}`}>
-                          {patient.status}
-                        </span>
-                      </td>
-                      <td class="px-4 py-2 whitespace-nowrap text-textSecondary">
-                        {patient.patient?.telefono || '-'}
-                      </td>
-                      <td class="px-4 py-2 whitespace-nowrap">
-                        <Button
-                          variant="text"
-                          size="sm"
-                          on:click={(event) => {
-                            event.stopPropagation();
-                            openPatient(patient);
-                          }}
-                        >
-                          Apri
-                        </Button>
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          {/if}
-        </div>
-      </div>
+      <AmbulatorioScheduleView
+        patients={$patients}
+        openDates={openAmbulatorioDates}
+        onBack={backToHome}
+        onOpenPatient={openPatient}
+        onOpenNote={openNoteModal}
+        onPersistOpenDates={persistAmbulatorioOpenDates}
+      />
     {:else if currentView === 'settings'}
       <div class="max-w-7xl mx-auto space-y-8">
         <div class="space-y-2">
@@ -1782,6 +1604,8 @@
         <PatientDetail
           patient={$selectedPatient}
           loading={loadingDetail}
+          allPatients={$patients}
+          ambulatorioOpenDates={openAmbulatorioDates}
           onBack={backToHome}
         />
       </div>
@@ -1803,6 +1627,46 @@
     </div>
   </footer>
 </main>
+
+{#if noteModalOpen}
+  <div
+    class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+  >
+    <div
+      class="bg-surface rounded-xl shadow-xl w-full max-w-lg overflow-hidden"
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+    >
+      <div class="px-5 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
+        <div>
+          <h3 class="text-lg font-semibold text-textPrimary">Note paziente</h3>
+          {#if noteModalPatient?.patient}
+            <p class="text-sm text-textSecondary">
+              {noteModalPatient.patient.nome} {noteModalPatient.patient.cognome}
+            </p>
+          {/if}
+        </div>
+        <Button variant="text" size="sm" on:click={closeNoteModal}>Chiudi</Button>
+      </div>
+      <div class="p-5 space-y-3">
+        <label class="text-sm font-medium text-textPrimary block" for="noteModalText">Note</label>
+        <textarea
+          id="noteModalText"
+          class="w-full min-h-[160px] px-3 py-2 border rounded-lg border-gray-200 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          bind:value={noteModalValue}
+          placeholder="Aggiungi note cliniche o logistiche"
+        ></textarea>
+      </div>
+      <div class="px-5 py-4 border-t border-gray-200 flex justify-end gap-2">
+        <Button variant="text" size="sm" on:click={closeNoteModal}>Annulla</Button>
+        <Button variant="primary" size="sm" disabled={savingNote} on:click={saveNote}>
+          {savingNote ? 'Salvataggio...' : 'Salva note'}
+        </Button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if showNewPatientModal}
   <div
@@ -2032,7 +1896,7 @@
           </div>
         </div>
         <div class="flex justify-end gap-2 mt-6">
-          <Button variant="text" size="sm" on:click={deferUpdatePrompt}>Dopo</Button>
+          <Button variant="text" size="sm" on:click={deferUpdatePrompt}>Scarica dopo</Button>
           <Button
             variant="primary"
             size="sm"
@@ -2062,7 +1926,7 @@
           </div>
         </div>
         <div class="flex justify-end gap-2 mt-6">
-          <Button variant="text" size="sm" on:click={deferUpdatePrompt}>Dopo</Button>
+          <Button variant="text" size="sm" on:click={deferUpdatePrompt}>Installa dopo</Button>
           <Button
             variant="primary"
             size="sm"

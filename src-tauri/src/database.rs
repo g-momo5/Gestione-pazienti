@@ -589,9 +589,66 @@ impl Database {
     // PATIENT OPERATIONS
     // ========================================================================
 
+    fn ensure_ambulatorio_slot_available(
+        &self,
+        conn: &Connection,
+        visit_date: Option<&str>,
+        visit_time: Option<&str>,
+        exclude_patient_id: Option<i64>,
+    ) -> Result<(), String> {
+        let date = visit_date
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let time = visit_time
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+
+        let (date, time) = match (date, time) {
+            (Some(date), Some(time)) => (date, time),
+            _ => return Ok(()),
+        };
+
+        let conflicts: i64 = if let Some(patient_id) = exclude_patient_id {
+            conn.query_row(
+                "SELECT COUNT(1) FROM patients
+                 WHERE ambulatorio_data_visita = ?1
+                   AND ambulatorio_orario_visita = ?2
+                   AND id <> ?3",
+                params![date, time, patient_id],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?
+        } else {
+            conn.query_row(
+                "SELECT COUNT(1) FROM patients
+                 WHERE ambulatorio_data_visita = ?1
+                   AND ambulatorio_orario_visita = ?2",
+                params![date, time],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?
+        };
+
+        if conflicts > 0 {
+            return Err(format!(
+                "Lo slot {} alle {} è già occupato da un altro paziente",
+                date, time
+            ));
+        }
+
+        Ok(())
+    }
+
     /// Inserisce un nuovo paziente (stato iniziale: Da valutare)
     pub fn insert_patient(&self, patient: &Patient) -> Result<i64, String> {
         let conn = self.conn.lock().unwrap();
+
+        self.ensure_ambulatorio_slot_available(
+            &conn,
+            patient.ambulatorio_data_visita.as_deref(),
+            patient.ambulatorio_orario_visita.as_deref(),
+            None,
+        )?;
 
         conn.execute("BEGIN TRANSACTION", []).map_err(|e| e.to_string())?;
 
@@ -701,6 +758,12 @@ impl Database {
     pub fn update_patient(&self, patient: &Patient) -> Result<(), String> {
         let conn = self.conn.lock().unwrap();
         let id = patient.id.ok_or("Patient ID is required for update")?;
+        self.ensure_ambulatorio_slot_available(
+            &conn,
+            patient.ambulatorio_data_visita.as_deref(),
+            patient.ambulatorio_orario_visita.as_deref(),
+            Some(id),
+        )?;
         let fattori_json = patient.ambulatorio_fattori.as_ref().and_then(|f| serde_json::to_string(f).ok());
 
         conn.execute(

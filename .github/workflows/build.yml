@@ -54,9 +54,10 @@ jobs:
             exit 1
           fi
           EXE_NAME="$(basename "${EXE_PATH}")"
-          cp "${EXE_PATH}" "release-assets/${EXE_NAME}"
-          echo "exe_path=release-assets/${EXE_NAME}" >> "$GITHUB_OUTPUT"
-          echo "exe_name=${EXE_NAME}" >> "$GITHUB_OUTPUT"
+          SAFE_EXE_NAME="${EXE_NAME// /.}"
+          cp "${EXE_PATH}" "release-assets/${SAFE_EXE_NAME}"
+          echo "exe_path=release-assets/${SAFE_EXE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "exe_name=${SAFE_EXE_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifacts (Windows)
         uses: actions/upload-artifact@v4
