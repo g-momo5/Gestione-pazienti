@@ -704,8 +704,22 @@ fn format_date_ita(date_iso: &str) -> String {
         .unwrap_or_else(|_| date_iso.to_string())
 }
 
-fn format_date_filename(date_iso: &str) -> String {
-    format_date_ita(date_iso).replace('/', ".")
+fn format_date_filename(raw_date: &str) -> String {
+    let value = raw_date.trim();
+    if value.is_empty() {
+        return String::new();
+    }
+
+    let parsed = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .or_else(|_| chrono::NaiveDate::parse_from_str(value, "%d/%m/%Y"))
+        .or_else(|_| chrono::NaiveDate::parse_from_str(value, "%d-%m-%Y"))
+        .or_else(|_| chrono::NaiveDate::parse_from_str(value, "%d.%m.%Y"));
+
+    if let Ok(date) = parsed {
+        return date.format("%d.%m.%Y").to_string();
+    }
+
+    value.replace('/', ".").replace('-', ".")
 }
 
 fn sanitize_filename(name: &str) -> String {
@@ -983,7 +997,7 @@ pub async fn generate_ambulatorio_referto(
     let out_dir = resolve_referti_dir(&settings, "amb", &app_handle);
     create_dir_all(&out_dir).map_err(|_| "Impossibile creare cartella referti".to_string())?;
 
-    let default_name = "{cognome} {nome} {data_visita}.docx";
+    let default_name = "{cognome} {nome} {data_visita}";
     let naming_pattern = settings
         .naming_amb
         .as_deref()

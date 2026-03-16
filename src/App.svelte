@@ -97,8 +97,14 @@
   let savingNote = false;
   // Impostazioni (solo UI locale per ora)
   const DEFAULT_REFERTI_PROC_NAMING = 'Scheda procedurale - {cognome} {nome}.docx';
-  const DEFAULT_REFERTI_AMB_NAMING = '{cognome} {nome} {data_visita}.docx';
-  const DEFAULT_REFERTI_HELPER = 'Placeholders: {nome} {cognome} {dn} {data_visita} ecc.';
+  const DEFAULT_REFERTI_AMB_NAMING = '{cognome} {nome} {data_visita}';
+  const LEGACY_REFERTI_AMB_NAMING_VALUES = new Set([
+    '{cognome} {nome} - ambulatorio strutturale.docx',
+    '{cognome} {nome} - ambulatorio strutturale',
+  ]);
+  const DEFAULT_REFERTI_AMB_HELPER =
+    'Placeholder: {cognome} {nome} {dn} {data_visita}. {data_visita} viene salvata come gg.mm.aaaa.';
+  const DEFAULT_REFERTI_PROC_HELPER = 'Placeholder: {cognome} {nome} {dn}.';
   const ROOT_PROC_DIR = 'Schede procedurali';
   const DB_FILENAME = 'pazienti_tavi.db';
   const APP_OWNER_LABEL = 'GMD Medical';
@@ -376,6 +382,12 @@
       .toLowerCase()
       .replace(/\s+/g, '');
 
+  const normalizeNamingPattern = (value) =>
+    String(value || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+
   const matchesPatientQuery = (patient, normalized, compact) => {
     if (!normalized && !compact) return false;
     const data = patient?.patient ?? patient;
@@ -513,6 +525,11 @@
       console.error('Errore caricamento impostazioni locale', e);
     }
 
+    // Migrazione automatica del vecchio default ambulatorio salvato nelle impostazioni.
+    if (LEGACY_REFERTI_AMB_NAMING_VALUES.has(normalizeNamingPattern(next.namingAmb))) {
+      next.namingAmb = DEFAULT_REFERTI_AMB_NAMING;
+    }
+
     // Defaults calcolati sul filesystem corrente o fallback statici
     const defaults = {};
     try {
@@ -534,7 +551,12 @@
         defaults.backupPath = await safeJoin(baseData, 'backup');
       }
       if (!next.refertiAmbPath) {
-        defaults.refertiAmbPath = await safeJoin(baseDocs, 'Referti TAVI');
+        defaults.refertiAmbPath = isWindows()
+          ? 'M:\\Ambulatorio SCA\\Ambulatorio Strutturale'
+          : await safeJoin(baseDocs, 'Referti TAVI');
+      }
+      if (!next.namingAmb?.trim()) {
+        defaults.namingAmb = DEFAULT_REFERTI_AMB_NAMING;
       }
     } catch (e) {
       console.error('Errore nel calcolo dei percorsi di default', e);
@@ -1147,7 +1169,7 @@
               on:click={openAmbulatorioList}
             >
               <IconBadge icon="calendar" size="lg" tone="neutral" class="mb-1" />
-              <span class="text-xs font-semibold">Visite ambulatorio</span>
+              <span class="text-xs font-semibold">Calendario</span>
             </Button>
             <Button
               variant="secondary"
@@ -1468,7 +1490,7 @@
               <Input
                 label="Naming file ambulatorio"
                 bind:value={settings.namingAmb}
-                helperText={DEFAULT_REFERTI_HELPER}
+                helperText={DEFAULT_REFERTI_AMB_HELPER}
                 error={settingsErrors.namingAmb}
               />
             </div>
@@ -1478,7 +1500,7 @@
               <Input
                 label="Naming file procedurale"
                 bind:value={settings.namingProc}
-                helperText={DEFAULT_REFERTI_HELPER}
+                helperText={DEFAULT_REFERTI_PROC_HELPER}
                 error={settingsErrors.namingProc}
               />
             </div>

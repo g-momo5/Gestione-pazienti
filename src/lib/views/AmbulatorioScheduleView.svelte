@@ -25,6 +25,7 @@
   let showAvailableDatesModal = false;
   let showAssignModal = false;
   let showMoveModal = false;
+  let showRemoveDateModal = false;
 
   let assignPatientId = '';
   let assignSlot = '';
@@ -39,6 +40,12 @@
   let moveTimeSelection = '';
   let moveCustomTime = '';
   let savingMove = false;
+
+  let removeDateTarget = '';
+  let removeDateAppointments = [];
+  let removeDateAlternatives = [];
+  let removeDateSelection = '';
+  let removingDate = false;
 
   const normalizeSearchValue = (value) =>
     String(value || '')
@@ -215,8 +222,44 @@
       return date === dateIso && time === timeIso;
     });
   };
+  const getAppointmentsForDate = (dateIso) => {
+    if (!isIsoDate(dateIso)) return [];
+    return (patients || []).filter((entry) => {
+      const patientData = entry?.patient;
+      if (!patientData?.id) return false;
+      return normalizeIsoDate(patientData.ambulatorio_data_visita) === dateIso;
+    });
+  };
+  const getCompatibleRescheduleDates = (sourceDate, movingEntries = []) => {
+    const movingIds = new Set(movingEntries.map((entry) => getEntryId(entry)));
+    return availableDates.filter((candidateDate) => candidateDate !== sourceDate).filter((candidateDate) => {
+      const occupiedSlots = new Set();
 
+      for (const entry of patients || []) {
+        const entryId = getEntryId(entry);
+        if (movingIds.has(entryId)) continue;
+        if (normalizeIsoDate(entry?.patient?.ambulatorio_data_visita) !== candidateDate) continue;
+        const slotTime = normalizeSlotTime(entry?.patient?.ambulatorio_orario_visita);
+        if (isValidSlotTime(slotTime)) occupiedSlots.add(slotTime);
+      }
+
+      const movedSlots = new Set();
+      for (const entry of movingEntries) {
+        const slotTime = normalizeSlotTime(entry?.patient?.ambulatorio_orario_visita);
+        if (!isValidSlotTime(slotTime)) continue;
+        if (occupiedSlots.has(slotTime) || movedSlots.has(slotTime)) return false;
+        movedSlots.add(slotTime);
+      }
+
+      return true;
+    });
+  };
   $: availableDates = sanitizeOpenDates(openDates);
+  $: availableDatesDesc = [...availableDates].reverse();
+  $: removeDateAlternativeOptions = removeDateAlternatives.map((date) => ({
+    value: date,
+    label: formatDateIT(date),
+  }));
   $: dateInvalid = Boolean(listDate) && !isIsoDate(listDate);
   $: isCurrentDateAvailable = availableDates.includes(listDate);
   $: previousAvailableDate = availableDates.filter((date) => date < listDate).at(-1) || '';
@@ -279,23 +322,122 @@
     if (availableDates.includes(date)) return true;
     return Boolean(
       await onPersistOpenDates([...availableDates, date], {
-        successMessage: opts.successMessage || `Data ${formatDateIT(date)} aggiunta tra le date disponibili`,
+        successMessage: opts.successMessage || `Data ${formatDateIT(date)} aggiunta tra le date ambulatorio`,
       })
     );
   }
 
-  async function removeAvailableDate(date) {
+  function removeAvailableDate(date) {
     if (!isIsoDate(date)) {
       notifyError('Seleziona una data valida');
       return false;
     }
     if (!availableDates.includes(date)) return true;
-    return Boolean(
-      await onPersistOpenDates(
-        availableDates.filter((entry) => entry !== date),
-        { successMessage: `Data ${formatDateIT(date)} rimossa dalle date disponibili` }
-      )
-    );
+
+    const appointmentsOnDate = getAppointmentsForDate(date);
+    removeDateTarget = date;
+    removeDateAppointments = appointmentsOnDate;
+    removeDateAlternatives = getCompatibleRescheduleDates(date, appointmentsOnDate);
+    removeDateSelection = removeDateAlternatives[0] || '';
+    removingDate = false;
+    showRemoveDateModal = true;
+    return true;
+  }
+
+  function closeRemoveDateModal(force = false) {
+    if (removingDate && !force) return;
+    showRemoveDateModal = false;
+    removeDateTarget = '';
+    removeDateAppointments = [];
+    removeDateAlternatives = [];
+    removeDateSelection = '';
+  }
+
+  async function executeRemoveAvailableDate(date, targetRescheduleDate = '') {
+    if (removingDate) return false;
+    if (!isIsoDate(date)) {
+      notifyError('Seleziona una data valida');
+      return false;
+    }
+    if (!availableDates.includes(date)) return true;
+
+    const appointmentsOnDate = getAppointmentsForDate(date);
+    const selectedRescheduleDate = normalizeIsoDate(targetRescheduleDate);
+    let movedPatientsCount = 0;
+
+    if (appointmentsOnDate.length > 0 && selectedRescheduleDate) {
+      const compatibleDates = getCompatibleRescheduleDates(date, appointmentsOnDate);
+      if (!compatibleDates.includes(selectedRescheduleDate)) {
+        notifyError('La data alternativa selezionata non è compatibile con gli orari dei pazienti.');
+        return false;
+      }
+    }
+
+    removingDate = true;
+    try {
+      if (appointmentsOnDate.length > 0 && selectedRescheduleDate) {
+        for (const entry of appointmentsOnDate) {
+          const patientData = entry?.patient;
+          if (!patientData?.id) continue;
+          await updatePatient({
+            ...patientData,
+            ambulatorio_data_visita: selectedRescheduleDate,
+          });
+          movedPatientsCount += 1;
+        }
+      }
+
+      const successMessage =
+        movedPatientsCount > 0 && selectedRescheduleDate
+          ? `Data ${formatDateIT(date)} rimossa. ${movedPatientsCount} pazienti riprogrammati al ${formatDateIT(selectedRescheduleDate)}`
+          : `Data ${formatDateIT(date)} rimossa dalle date ambulatorio`;
+
+      const removed = Boolean(
+        await onPersistOpenDates(
+          availableDates.filter((entry) => entry !== date),
+          { successMessage }
+        )
+      );
+      if (!removed) return false;
+
+      if (listDate === date) {
+        const remainingDates = availableDates.filter((entry) => entry !== date);
+        listDate =
+          selectedRescheduleDate ||
+          remainingDates.find((entry) => entry > date) ||
+          remainingDates.at(-1) ||
+          getTodayISO();
+      }
+
+      closeRemoveDateModal(true);
+      return true;
+    } catch (e) {
+      console.error(e);
+      notifyError(e, "Errore durante l'aggiornamento della data ambulatorio");
+      return false;
+    } finally {
+      removingDate = false;
+    }
+  }
+
+  async function confirmRemoveDateWithoutReschedule() {
+    if (removeDateAppointments.length > 0) {
+      const appointmentsLabel = removeDateAppointments.length === 1 ? 'appuntamento' : 'appuntamenti';
+      const confirmed = window.confirm(
+        `Confermi la rimozione del ${formatDateIT(removeDateTarget)} senza riprogrammare? ${removeDateAppointments.length} ${appointmentsLabel} resteranno su una data non disponibile.`
+      );
+      if (!confirmed) return;
+    }
+    await executeRemoveAvailableDate(removeDateTarget, '');
+  }
+
+  async function confirmRescheduleAndRemove() {
+    if (!removeDateSelection) {
+      notifyError('Seleziona una data alternativa');
+      return;
+    }
+
+    await executeRemoveAvailableDate(removeDateTarget, removeDateSelection);
   }
 
   function openAssignModal(slot) {
@@ -357,11 +499,11 @@
 
     if (!availableDates.includes(selectedDate)) {
       const confirmAddDate = window.confirm(
-        `La data ${formatDateIT(selectedDate)} non è tra le date disponibili. Vuoi aggiungerla adesso?`
+        `La data ${formatDateIT(selectedDate)} non è tra le date ambulatorio. Vuoi aggiungerla adesso?`
       );
       if (!confirmAddDate) return;
       const added = await addAvailableDate(selectedDate, {
-        successMessage: `Data ${formatDateIT(selectedDate)} aggiunta tra le date disponibili`,
+        successMessage: `Data ${formatDateIT(selectedDate)} aggiunta tra le date ambulatorio`,
       });
       if (!added) return;
     }
@@ -479,11 +621,11 @@
 
     if (!availableDates.includes(selectedDate)) {
       const confirmAddDate = window.confirm(
-        `La data ${formatDateIT(selectedDate)} non è tra le date disponibili. Vuoi aggiungerla adesso?`
+        `La data ${formatDateIT(selectedDate)} non è tra le date ambulatorio. Vuoi aggiungerla adesso?`
       );
       if (!confirmAddDate) return;
       const added = await addAvailableDate(selectedDate, {
-        successMessage: `Data ${formatDateIT(selectedDate)} aggiunta tra le date disponibili`,
+        successMessage: `Data ${formatDateIT(selectedDate)} aggiunta tra le date ambulatorio`,
       });
       if (!added) return;
     }
@@ -518,7 +660,7 @@
       <div class="flex items-start gap-3">
         <BackCircleButton onClick={onBack} />
         <div>
-          <h2 class="text-2xl font-bold text-textPrimary">Visite ambulatorio</h2>
+          <h2 class="text-2xl font-bold text-textPrimary">Calendario</h2>
           <p class="text-textSecondary">Programmazione a slot dell'ambulatorio strutturale.</p>
         </div>
       </div>
@@ -528,7 +670,7 @@
         on:click={() => (showAvailableDatesModal = true)}
       >
         <IconBadge icon="calendar" size="lg" tone="neutral" class="mb-1" />
-        <span class="text-xs font-semibold">Date disponibili</span>
+        <span class="text-xs font-semibold">Date ambulatorio</span>
       </Button>
     </div>
   </div>
@@ -536,12 +678,23 @@
   <div class="grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] gap-6">
     <Card padding="lg" class="border border-gray-200 space-y-4">
       <div>
-        <h3 class="text-base font-semibold text-textPrimary">Navigazione date</h3>
-        <p class="text-xs text-textSecondary mt-1">Scegli la data da programmare o salta tra date disponibili.</p>
+        <h3 class="text-lg font-semibold text-textPrimary">Navigazione date</h3>
+        <p class="text-xs text-textSecondary mt-1">Scegli la data da programmare o salta tra date ambulatorio.</p>
       </div>
 
-      <div class="w-full">
-        <Input label="Data" type="date" bind:value={listDate} />
+      <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2 items-end w-full">
+        <Input label="Data" type="date" class="h-10" bind:value={listDate} />
+        <Button
+          variant="secondary"
+          size="sm"
+          class="h-10 min-w-[40px] px-0 text-xl leading-none"
+          on:click={() => addAvailableDate(listDate)}
+          disabled={!isIsoDate(listDate) || dateInvalid}
+          title="Aggiungi data all'elenco date ambulatorio"
+          aria-label="Aggiungi data all'elenco date ambulatorio"
+        >
+          +
+        </Button>
       </div>
 
       <div class="grid grid-cols-[1fr_1fr_1.4fr_1fr_1fr] gap-2 w-full">
@@ -575,19 +728,30 @@
       </div>
 
       <div class="space-y-2">
-        <h4 class="text-sm font-semibold text-textPrimary">Date disponibili</h4>
+        <h4 class="text-sm font-semibold text-textPrimary">Date ambulatorio</h4>
         {#if availableDates.length === 0}
           <p class="text-sm text-textSecondary">Nessuna data disponibile configurata.</p>
         {:else}
           <div class="max-h-72 overflow-y-auto space-y-1 pr-1">
-            {#each availableDates as openDate}
-              <button
-                type="button"
-                class={`w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors ${openDate === listDate ? 'border-primary bg-primary/10 text-primary font-medium' : 'border-gray-200 bg-surface-strong text-textPrimary hover:border-primary/40'}`}
-                on:click={() => (listDate = openDate)}
-              >
-                {formatDateIT(openDate)}
-              </button>
+            {#each availableDatesDesc as openDate}
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class={`flex-1 text-left px-3 py-2 rounded-lg border text-sm transition-colors ${openDate === listDate ? 'border-primary bg-primary/10 text-primary font-medium' : 'border-gray-200 bg-surface-strong text-textPrimary hover:border-primary/40'}`}
+                  on:click={() => (listDate = openDate)}
+                >
+                  {formatDateIT(openDate)}
+                </button>
+                <button
+                  type="button"
+                  class="h-8 w-8 shrink-0 rounded-full border border-red-300 bg-red-50 text-red-700 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-300 transition-colors"
+                  on:click={() => removeAvailableDate(openDate)}
+                  title="Rimuovi data ambulatorio"
+                  aria-label="Rimuovi data ambulatorio"
+                >
+                  -
+                </button>
+              </div>
             {/each}
           </div>
         {/if}
@@ -610,12 +774,12 @@
         </div>
       {:else if !isCurrentDateAvailable}
         <div class="px-6 py-10 text-center text-textSecondary">
-          Gli slot sono visibili solo per le date disponibili.
+          Gli slot sono visibili solo per le date ambulatorio.
         </div>
       {:else}
         <div class="divide-y divide-gray-200">
           {#each rows as row}
-            <div class={`px-6 py-3 grid grid-cols-1 md:grid-cols-[max-content_30px_minmax(0,1fr)_auto] gap-y-3 md:gap-y-2 gap-x-0.5 items-center ${row.rowType === 'tc' ? 'bg-surface-strong' : ''}`}>
+            <div class={`px-6 py-3 grid grid-cols-1 md:grid-cols-[48px_30px_minmax(0,1fr)_auto] gap-y-3 md:gap-y-2 gap-x-0.5 items-center ${row.rowType === 'tc' ? 'bg-surface-strong' : ''}`}>
               <div class="text-sm font-semibold text-textPrimary pr-0.5">{row.timeLabel}</div>
 
               {#if row.rowType === 'tc'}
@@ -636,14 +800,12 @@
                 </button>
                 <button
                   type="button"
-                  class="w-full text-left rounded-lg border border-gray-200 bg-surface-strong px-3 py-2 hover:border-primary/40 transition-colors"
+                  class="w-full h-[34px] text-left rounded-lg border border-gray-200 bg-surface-strong px-3 text-sm hover:border-primary/40 transition-colors flex items-center"
                   on:click={() => onOpenPatient(row.patient)}
                 >
-                  <p class="font-medium text-textPrimary">
+                  <p class="font-medium text-textPrimary truncate">
                     {slotPatient?.cognome} {slotPatient?.nome}
-                  </p>
-                  <p class="text-xs text-textSecondary">
-                    {slotPatient?.data_nascita ? `${formatDateIT(slotPatient?.data_nascita)} (${calculateAge(slotPatient?.data_nascita)} anni)` : 'Data nascita non disponibile'}
+                    {slotPatient?.data_nascita ? ` • ${formatDateIT(slotPatient?.data_nascita)}` : ''}
                   </p>
                 </button>
                 <div class="flex flex-wrap items-center gap-2 justify-start md:justify-end">
@@ -660,11 +822,10 @@
               {:else if row.rowType === 'standard'}
                 <button
                   type="button"
-                  class="md:col-start-3 md:col-span-2 text-left rounded-lg border border-dashed border-primary/40 bg-primary/5 px-3 py-2 hover:bg-primary/10 transition-colors"
+                  class="md:col-start-3 md:col-span-2 h-[34px] text-left rounded-lg border border-dashed border-primary/40 bg-primary/5 px-3 text-sm font-semibold text-primary hover:bg-primary/10 transition-colors flex items-center"
                   on:click={() => openAssignModal(row.time)}
                 >
-                  <p class="text-sm font-semibold text-primary">Slot libero</p>
-                  <p class="text-xs text-textSecondary">Clicca sullo slot per assegnare un appuntamento</p>
+                  <p class="truncate">Slot libero</p>
                 </button>
               {:else}
                 <div class="hidden md:block"></div>
@@ -679,14 +840,82 @@
   </div>
 </div>
 
+{#if showRemoveDateModal}
+  <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+    <div class="max-w-lg w-full" role="dialog" aria-modal="true" tabindex="-1">
+      <Card padding="lg" class="bg-surface space-y-4">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <h3 class="text-lg font-semibold text-textPrimary">Rimuovi data ambulatorio</h3>
+            <p class="text-sm text-textSecondary">
+              Data selezionata: <span class="font-semibold text-textPrimary">{formatDateIT(removeDateTarget)}</span>
+            </p>
+          </div>
+          <Button variant="text" size="sm" on:click={closeRemoveDateModal} disabled={removingDate}>Chiudi</Button>
+        </div>
+
+        {#if removeDateAppointments.length === 0}
+          <div class="rounded-lg border border-gray-200 bg-surface-strong px-4 py-3 text-sm text-textSecondary">
+            Nessun paziente prenotato su questa data. Puoi rimuoverla direttamente.
+          </div>
+        {:else}
+          <div class="space-y-2">
+            <p class="text-sm text-textSecondary">
+              Sono presenti <span class="font-semibold text-textPrimary">{removeDateAppointments.length}</span>
+              {removeDateAppointments.length === 1 ? ' paziente prenotato' : ' pazienti prenotati'}.
+            </p>
+            <p class="text-xs text-textSecondary">
+              Puoi riprogrammare i pazienti su una data alternativa disponibile mantenendo lo stesso orario.
+            </p>
+          </div>
+
+          {#if removeDateAlternativeOptions.length === 0}
+            <div class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Nessuna data alternativa compatibile disponibile.
+            </div>
+          {:else}
+            <Select
+              label="Date alternative disponibili"
+              options={removeDateAlternativeOptions}
+              bind:value={removeDateSelection}
+              placeholder="Seleziona data alternativa"
+            />
+          {/if}
+        {/if}
+
+        <div class="flex flex-wrap justify-end gap-2">
+          <Button variant="text" size="sm" on:click={closeRemoveDateModal} disabled={removingDate}>Annulla</Button>
+          {#if removeDateAppointments.length > 0}
+            <Button variant="secondary" size="sm" on:click={confirmRemoveDateWithoutReschedule} disabled={removingDate}>
+              {removingDate ? 'Salvataggio...' : 'Rimuovi senza riprogrammare'}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              on:click={confirmRescheduleAndRemove}
+              disabled={removingDate || removeDateAlternativeOptions.length === 0}
+            >
+              {removingDate ? 'Salvataggio...' : 'Riprogramma e rimuovi'}
+            </Button>
+          {:else}
+            <Button variant="danger" size="sm" on:click={confirmRemoveDateWithoutReschedule} disabled={removingDate}>
+              {removingDate ? 'Rimozione...' : 'Rimuovi data'}
+            </Button>
+          {/if}
+        </div>
+      </Card>
+    </div>
+  </div>
+{/if}
+
 {#if showAvailableDatesModal}
   <div class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
     <div class="max-w-xl w-full" role="dialog" aria-modal="true" tabindex="-1">
       <Card padding="lg" class="bg-surface space-y-4">
         <div class="flex items-start justify-between gap-3">
           <div>
-            <h3 class="text-lg font-semibold text-textPrimary">Date disponibili</h3>
-            <p class="text-sm text-textSecondary">Gestione completa delle date disponibili dell'ambulatorio.</p>
+            <h3 class="text-lg font-semibold text-textPrimary">Date ambulatorio</h3>
+            <p class="text-sm text-textSecondary">Gestione completa delle date ambulatorio dell'ambulatorio.</p>
           </div>
           <Button variant="text" size="sm" on:click={() => (showAvailableDatesModal = false)}>Chiudi</Button>
         </div>
@@ -739,17 +968,14 @@
         <div class="flex items-start justify-between gap-3">
           <div>
             <h3 class="text-lg font-semibold text-textPrimary">Assegna appuntamento</h3>
-            <p class="text-sm text-textSecondary">
+            <p class="text-base text-textSecondary">
               Slot selezionato: <span class="font-semibold text-textPrimary">{formatDateIT(assignDate)} alle {formatSlotLabel(assignSlot)}</span>
             </p>
           </div>
           <Button variant="text" size="sm" on:click={closeAssignModal}>Chiudi</Button>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Input label="Data appuntamento" type="date" bind:value={assignDate} />
-          <Input label="Ricerca paziente" placeholder="Cognome, nome o codice fiscale" bind:value={assignSearch} />
-        </div>
+        <Input label="Ricerca paziente" placeholder="Cognome, nome o codice fiscale" bind:value={assignSearch} />
 
         {#if filteredAssignablePatients.length === 0}
           <div class="rounded-lg border border-gray-200 bg-surface-strong px-4 py-6 text-sm text-textSecondary text-center">
@@ -761,18 +987,28 @@
               {@const appointmentSummary = formatAppointmentSummary(patientEntry)}
               {@const assignPatient = getPatientData(patientEntry)}
               {@const assignHasNote = hasPatientNote(patientEntry)}
-              <button
-                type="button"
+              <div
+                role="button"
+                tabindex="0"
                 class={`w-full text-left rounded-lg border px-3 py-2 transition-colors ${assignPatientId === getEntryId(patientEntry) ? 'border-primary bg-primary/5' : 'border-gray-200 bg-surface hover:border-primary/40'}`}
                 on:click={() => (assignPatientId = getEntryId(patientEntry))}
+                on:keydown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    assignPatientId = getEntryId(patientEntry);
+                  }
+                }}
               >
                 <div class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1">
-                  <span
-                    class={`inline-flex row-span-2 self-center shrink-0 items-center justify-center rounded-full border p-0.5 ${assignHasNote ? 'border-amber-300 bg-amber-100' : 'border-gray-300 bg-surface'}`}
-                    title={assignHasNote ? 'Nota presente' : 'Nessuna nota'}
+                  <button
+                    type="button"
+                    class={`inline-flex row-span-2 self-center shrink-0 items-center justify-center rounded-full border p-0.5 transition-colors focus:outline-none focus:ring-2 focus:ring-primary/30 ${assignHasNote ? 'border-amber-300 bg-amber-100 hover:bg-amber-200' : 'border-gray-300 bg-surface hover:bg-surface-strong'}`}
+                    on:click|stopPropagation={() => onOpenNote(patientEntry)}
+                    aria-label={assignHasNote ? 'Apri note paziente' : 'Aggiungi nota paziente'}
+                    title={assignHasNote ? 'Apri note paziente' : 'Aggiungi nota paziente'}
                   >
                     <IconBadge icon="note" size="md" tone={assignHasNote ? 'warning' : 'neutral'} />
-                  </span>
+                  </button>
                   <p class="text-sm font-semibold text-textPrimary">
                     {assignPatient?.cognome} {assignPatient?.nome}
                   </p>
@@ -785,7 +1021,7 @@
                     </p>
                   {/if}
                 </div>
-              </button>
+              </div>
             {/each}
           </div>
         {/if}

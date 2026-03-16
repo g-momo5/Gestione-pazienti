@@ -17,6 +17,7 @@
   export let inputMode = '';
   export let maxLength = null;
   export let pattern = '';
+  export let list = '';
   export let autoComplete = '';
   export let className = '';
   export { className as class };
@@ -60,6 +61,7 @@
     {inputMode}
     {maxLength}
     {pattern}
+    list={list || undefined}
     autocomplete={autoComplete}
     value={value}
     on:input={handleInput}

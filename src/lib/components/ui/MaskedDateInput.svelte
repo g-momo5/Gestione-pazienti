@@ -161,6 +161,14 @@
       inputEl.setSelectionRange(nextPos, nextPos);
     }
   }
+
+  const handleFocus = (e) => {
+    dispatch('focus', e?.detail ?? e);
+  };
+
+  const handleBlur = (e) => {
+    dispatch('blur', e?.detail ?? e);
+  };
 </script>
 
 <Input
@@ -176,4 +184,6 @@
   className="date-field"
   error={displayError}
   on:input={handleInput}
+  on:focus={handleFocus}
+  on:blur={handleBlur}
 />

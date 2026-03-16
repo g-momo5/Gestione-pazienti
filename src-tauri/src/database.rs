@@ -86,6 +86,52 @@ impl Database {
         Ok(())
     }
 
+    /// Sposta automaticamente in "TAVI eseguita" i pazienti con data TAVI passata.
+    /// La transizione viene applicata ai pazienti nello stato "In attesa di TAVI".
+    fn auto_mark_tavi_completed(&self, conn: &Connection) -> Result<(), String> {
+        conn.execute("BEGIN TRANSACTION", [])
+            .map_err(|e| e.to_string())?;
+
+        let result = (|| -> SqlResult<()> {
+            conn.execute(
+                "INSERT OR IGNORE INTO patients_completato (patient_id)
+                 SELECT ai.patient_id
+                 FROM patients_in_attesa_intervento ai
+                 INNER JOIN patients p ON p.id = ai.patient_id
+                 WHERE p.data_tavi IS NOT NULL
+                   AND TRIM(p.data_tavi) <> ''
+                   AND p.data_tavi < DATE('now', 'localtime')",
+                [],
+            )?;
+
+            conn.execute(
+                "DELETE FROM patients_in_attesa_intervento
+                 WHERE patient_id IN (
+                   SELECT ai.patient_id
+                   FROM patients_in_attesa_intervento ai
+                   INNER JOIN patients p ON p.id = ai.patient_id
+                   WHERE p.data_tavi IS NOT NULL
+                     AND TRIM(p.data_tavi) <> ''
+                     AND p.data_tavi < DATE('now', 'localtime')
+                 )",
+                [],
+            )?;
+
+            Ok(())
+        })();
+
+        match result {
+            Ok(_) => {
+                conn.execute("COMMIT", []).map_err(|e| e.to_string())?;
+                Ok(())
+            }
+            Err(e) => {
+                conn.execute("ROLLBACK", []).ok();
+                Err(e.to_string())
+            }
+        }
+    }
+
     /// Inizializza lo schema del database
     fn initialize_schema(&self) -> SqlResult<()> {
         let conn = self.conn.lock().unwrap();
@@ -868,6 +914,7 @@ impl Database {
     pub fn get_all_patients_with_status(&self, filters: Option<PatientFilters>) -> Result<Vec<PatientWithStatus>, String> {
         let conn = self.conn.lock().unwrap();
         self.ensure_status_tables(&conn).map_err(|e| e.to_string())?;
+        self.auto_mark_tavi_completed(&conn)?;
 
         let mut query = String::from(
             "SELECT p.*, 'Da valutare' as status, dv.created_at as status_created_at
@@ -1044,6 +1091,7 @@ impl Database {
     pub fn get_patient_status_counts(&self) -> Result<Vec<PatientStatusCount>, String> {
         let conn = self.conn.lock().unwrap();
         self.ensure_status_tables(&conn).map_err(|e| e.to_string())?;
+        self.auto_mark_tavi_completed(&conn)?;
 
         let statuses = vec![
             ("Da valutare", "patients_da_valutare"),
