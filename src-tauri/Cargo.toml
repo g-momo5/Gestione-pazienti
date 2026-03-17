@@ -1,6 +1,6 @@
 [package]
 name = "registro-tavi"
-version = "1.0.1"
+version = "1.0.2"
 description = "Gestionale Pazienti TAVI - Applicazione desktop per gestire pazienti in lista TAVI"
 authors = ["GMD Medical"]
 license = "Proprietary"
